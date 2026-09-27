@@ -49,15 +49,18 @@
     display:flex; flex-direction:column; gap:8px; align-items:center;
     width:100%; max-width:480px;
   }
-  .dpad{
-    display:grid; grid-template-columns:repeat(3,64px); grid-template-rows:repeat(3,64px);
-    gap:6px;
+  .joystick{
+    width:150px; height:150px; border-radius:50%;
+    background:var(--panel); border:3px solid var(--ink);
+    position:relative; touch-action:none; margin:6px 0;
   }
-  .dpad button{ grid-column:auto; font-size:1.4rem; }
-  .dpad .up{grid-column:2; grid-row:1;}
-  .dpad .left{grid-column:1; grid-row:2;}
-  .dpad .down{grid-column:2; grid-row:2;}
-  .dpad .right{grid-column:3; grid-row:2;}
+  .joystick-knob{
+    width:60px; height:60px; border-radius:50%;
+    background:var(--accent2); border:2px solid var(--ink);
+    position:absolute; top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    pointer-events:none;
+  }
   button{
     background:var(--panel); border:2px solid var(--ink); border-radius:10px;
     color:var(--ink); font-family:inherit; font-size:0.85rem;
@@ -113,9 +116,8 @@
     }
     .msg{ font-size:0.75rem; max-width:190px; }
     .big-btn{ padding:12px 6px; font-size:0.85rem; }
-    .dpad{
-      grid-template-columns:repeat(3,50px); grid-template-rows:repeat(3,50px);
-    }
+    .joystick{ width:110px; height:110px; }
+    .joystick-knob{ width:44px; height:44px; }
   }
 </style>
 </head>
@@ -137,11 +139,8 @@
     <div class="right-col">
       <div class="msg" id="msg">畑まで歩いて「アクション」を押してみて</div>
       <div class="controls">
-        <div class="dpad">
-          <button class="up" data-dir="up">↑</button>
-          <button class="left" data-dir="left">←</button>
-          <button class="down" data-dir="down">↓</button>
-          <button class="right" data-dir="right">→</button>
+        <div class="joystick" id="joystick">
+          <div class="joystick-knob" id="joystickKnob"></div>
         </div>
         <div class="big-row">
           <button class="big-btn" id="btnAction">⚡ アクション</button>
@@ -182,11 +181,12 @@
     lastTouchEnd = now;
   }, { passive:false });
 
-  const TILE = 32, COLS = 14, ROWS = 9;
+  const TILE = 30, VIEW_COLS = 14, VIEW_ROWS = 10;
+  const COLS = 32, ROWS = 24; // world size (bigger than the visible viewport)
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const DPR = Math.min(window.devicePixelRatio || 1, 3);
-  const displayW = TILE*COLS, displayH = TILE*ROWS;
+  const displayW = TILE*VIEW_COLS, displayH = TILE*VIEW_ROWS;
   canvas.style.width = displayW + 'px';
   canvas.style.height = displayH + 'px';
   canvas.width = displayW * DPR;
@@ -195,21 +195,34 @@
 
   const SAVE_KEY = 'nonbiri-farm-save-v1';
 
-  // Map: 0 grass, 1 soil, 2 shop, 3 path, 4 NPC, 5 chicken coop
-  const layout = [
-    "00000000000000",
-    "01111113000400",
-    "01111113000000",
-    "01111113022000",
-    "01111113000500",
-    "01111113000000",
-    "00000003000000",
-    "00000000000000",
-    "00000000000000",
-  ];
+  // World: 0 grass, 1 soil, 2 shop, 3 path, 4 NPC, 5 chicken coop, 6 tree, 7 water
+  const layout = [];
+  for(let y=0;y<ROWS;y++){ const row=[]; for(let x=0;x<COLS;x++) row.push('0'); layout.push(row); }
+  function fillRect(x0,y0,x1,y1,ch){
+    for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){ if(layout[y] && layout[y][x]!==undefined) layout[y][x]=ch; }
+  }
+  fillRect(4,3,10,8,'1');            // home farm
+  fillRect(3,2,11,2,'8');            // farm fence: north
+  fillRect(3,9,11,9,'8');            // farm fence: south
+  fillRect(3,3,3,8,'8');             // farm fence: west
+  fillRect(11,2,11,18,'3');          // main path spine (reopens east side of farm)
+  fillRect(11,6,18,6,'3');           // branch to village
+  fillRect(18,6,18,16,'3');          // branch down
+  fillRect(18,16,24,16,'3');         // branch to second farm
+  fillRect(21,17,26,20,'1');         // second farm plot
+  fillRect(2,14,6,17,'7');           // lake
+  layout[4][15]='a'; layout[4][16]='b'; layout[4][17]='c'; // shop building: roof (3 tiles)
+  layout[5][15]='d'; layout[5][16]='e'; layout[5][17]='f'; // shop building: walls + door (3 tiles)
+  layout[4][13]='4';                 // NPC
+  layout[8][16]='5';                 // chicken coop
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    if(layout[y][x]==='0' && (x*7+y*13)%23===0) layout[y][x]='6'; // scattered trees
+  }
+
+  const SOLID = new Set(['2','4','5','6','7','8','a','b','c','d','e','f']);
 
   let state = {
-    x:4, y:3, dir:'down',
+    px:6, py:5, dir:'down',
     gold:50, day:1, stamina:10, seeds:3, harvested:0, eggs:0,
     chicken:{ fed:false, eggReady:false },
     tiles:{} // "x,y" -> {tilled, planted, growth, watered}
@@ -218,7 +231,11 @@
   function load(){
     try{
       const raw = localStorage.getItem(SAVE_KEY);
-      if(raw){ const parsed = JSON.parse(raw); state = Object.assign(state, parsed); }
+      if(raw){
+        const parsed = JSON.parse(raw);
+        state = Object.assign(state, parsed);
+        if(state.px===undefined && parsed.x!==undefined){ state.px = parsed.x; state.py = parsed.y; }
+      }
     }catch(e){ console.warn('load failed', e); }
   }
   function save(){
@@ -245,6 +262,107 @@
     ".....PP..PP.....",
     ".....OO..OO.....",
   ];
+  // Back-facing (up): hide the eyes so it reads as the back of the head
+  const BACK_SPRITE = [
+    "................",
+    "......HHHH......",
+    ".....HHHHHH.....",
+    ".....HHHHHH.....",
+    ".....HHHHHH.....",
+    ".....HHHHHH.....",
+    "......SSSS......",
+    ".......SS.......",
+    "......BBBB......",
+    ".....BBBBBB.....",
+    ".....BBBBBB.....",
+    ".....BB..BB.....",
+    "......BBBB......",
+    "......PPPP......",
+    ".....PP..PP.....",
+    ".....OO..OO.....",
+  ];
+  // Side-facing (right; mirrored for left): single visible eye, arm forward
+  const SIDE_SPRITE = [
+    "................",
+    ".......HHHH.....",
+    "......HHHHHH....",
+    "......HSSSSH....",
+    "......HSSSSH....",
+    ".......SSES.....",
+    "......SSSSS.....",
+    ".......SSS......",
+    ".....BBBBB......",
+    "....BBBBBBB.....",
+    "....BBBBBBBB....",
+    "....BB...BB.....",
+    ".....BBBBB......",
+    ".....PPPP.......",
+    "....PP..PP......",
+    "....OO..OO......",
+  ];
+  // Wheat growth-stage sprites: mature stage uses 2x2 (4-block) grain heads
+  const SPROUT_SPRITE = [
+    "................","................","................","................",
+    "................","................","................","................",
+    "................","................","................","................",
+    "................","......GG........",".......G........",".......G........",
+  ];
+  const GROWING_SPRITE = [
+    "................","................","................","................",
+    "................","................","................","................",
+    "......G..G......","......G..G......","......G..G......","......G..G......",
+    "......G..G......","......G..G......","......G..G......","......G..G......",
+  ];
+  const MATURE_SPRITE = [
+    "................","................",".....WW..WW.....",".....WW..WW.....",
+    "......G..G......","......G..G......","......G..G......","......G..G......",
+    "......G..G......","......G..G......","......G..G......","......G..G......",
+    "......G..G......","......G..G......","......G..G......","......G..G......",
+  ];
+  const WHEAT_PALETTE = { G:'#5fa85f', W:'#f0c14e' };
+  const WHEAT_RIPE_PALETTE = { G:'#8a9b3f', W:'#f4d06a' };
+
+  // Detailed tree sprite (layered canopy over a trunk)
+  const TREE_SPRITE = [
+    "................",
+    "......LLLL......",
+    ".....LLLLLL.....",
+    "....LALLLLAL....",
+    "...LLLLLLLLLL...",
+    "....LLALLALL....",
+    ".....LLLLLL.....",
+    "......LLLL......",
+    ".......TT.......",
+    ".......TT.......",
+    ".......TT.......",
+    ".......TT.......",
+    "......TTTT......",
+    "................",
+    "................",
+    "................",
+  ];
+  const TREE_PALETTE = { L:'#4a8f4a', T:'#6b4a2a', A:'#e08030' };
+
+  // Detailed house/shop sprite (roof, windows, door)
+  const HOUSE_SPRITE = [
+    "................",
+    ".......RR.......",
+    "......RRRR......",
+    ".....RRRRRR.....",
+    "....RRRRRRRR....",
+    "...RRRRRRRRRR...",
+    "..RRRRRRRRRRRR..",
+    "..FFFFFFFFFFFF..",
+    "..FKKFFFFKKFFF..",
+    "..FKKFFFFKKFFF..",
+    "..FFFFFFFFFFFF..",
+    "..FFFFFDDFFFFF..",
+    "..FFFFFDDFFFFF..",
+    "..FFFFFFFFFFFF..",
+    "................",
+    "................",
+  ];
+  const HOUSE_PALETTE = { R:'#a5503a', F:'#e8dcb8', K:'#6ea8d8', D:'#6b3f26' };
   function drawSprite(px, py, sprite, palette, scale, flip){
     ctx.save();
     if(flip){ ctx.translate(px + sprite[0].length*scale, py); ctx.scale(-1,1); px = 0; py = 0; }
@@ -261,6 +379,9 @@
   }
   const PLAYER_PALETTE = { H:'#5b3a29', S:'#f2c58a', E:'#2a2118', B:'#e29b3f', P:'#4a3a2a', O:'#2a2118' };
   const NPC_PALETTE    = { H:'#8a4a3a', S:'#f2c58a', E:'#2a2118', B:'#6fa86f', P:'#4a3a2a', O:'#2a2118' };
+  function tileAt(x,y){ return layout[y] ? layout[y][x] : '0'; }
+  function tileX(){ return Math.round(state.px); }
+  function tileY(){ return Math.round(state.py); }
   function key(x,y){ return x+','+y; }
   function farmTile(x,y){
     const k = key(x,y);
@@ -277,22 +398,39 @@
     document.getElementById('eggs').textContent = state.eggs;
   }
 
-  function move(dx,dy,dir){
-    state.dir = dir;
-    const nx = state.x+dx, ny = state.y+dy;
-    if(nx<0||ny<0||nx>=COLS||ny>=ROWS) return;
-    const t = tileAt(nx,ny);
-    if(t==='2'||t==='4'||t==='5'){ return; } // solid: shop, NPC, coop
-    state.x = nx; state.y = ny;
-    draw(); save();
-  }
-
-  function nearType(type){
-    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
-      if(tileAt(state.x+dx, state.y+dy)===type) return true;
+  function collides(px, py){
+    const m = 0.16; // inset so the hitbox is a bit smaller than a full tile
+    const pts = [[px+m,py+m],[px+1-m,py+m],[px+m,py+1-m],[px+1-m,py+1-m]];
+    for(const [cx,cy] of pts){
+      const t = tileAt(Math.floor(cx), Math.floor(cy));
+      if(SOLID.has(t)) return true;
+      if(cx<0||cy<0||cx>=COLS||cy>=ROWS) return true;
     }
     return false;
   }
+
+  const SPEED = 4.2; // tiles per second
+  function updatePosition(dt, vx, vy){
+    if(vx===0 && vy===0) return;
+    const len = Math.hypot(vx,vy) || 1;
+    vx /= len; vy /= len;
+    const nx = state.px + vx*SPEED*dt;
+    if(!collides(nx, state.py)) state.px = nx;
+    const ny = state.py + vy*SPEED*dt;
+    if(!collides(state.px, ny)) state.py = ny;
+    if(Math.abs(vx) > Math.abs(vy)) state.dir = vx>0 ? 'right' : 'left';
+    else state.dir = vy>0 ? 'down' : 'up';
+  }
+
+  const SHOP_CHARS = new Set(['a','b','c','d','e','f']);
+  function nearAny(chars){
+    const tx = tileX(), ty = tileY();
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      if(chars.has(tileAt(tx+dx, ty+dy))) return true;
+    }
+    return false;
+  }
+  function nearType(type){ return nearAny(new Set([type])); }
 
   function useStamina(n){
     if(state.stamina < n){ setMsg('スタミナが足りないよ…寝て回復しよう'); return false; }
@@ -301,16 +439,16 @@
   }
 
   function action(){
-    const cur = tileAt(state.x,state.y);
+    const cur = tileAt(tileX(), tileY());
     if(cur==='1'){ farmAction(); return; }
-    if(nearType('2')){ openShop(); return; }
+    if(nearAny(SHOP_CHARS)){ openShop(); return; }
     if(nearType('4')){ talkNPC(); return; }
     if(nearType('5')){ chickenAction(); return; }
     setMsg('ここでは何もできないみたい');
   }
 
   function farmAction(){
-    const t = farmTile(state.x,state.y);
+    const t = farmTile(tileX(), tileY());
     if(!t.tilled){
       if(!useStamina(1)) return;
       t.tilled = true;
@@ -409,43 +547,119 @@
   document.getElementById('btnSleep').onclick = sleep;
   document.getElementById('btnAction').onclick = action;
 
-  document.querySelectorAll('.dpad button').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      const d = b.dataset.dir;
-      if(d==='up') move(0,-1,'up');
-      if(d==='down') move(0,1,'down');
-      if(d==='left') move(-1,0,'left');
-      if(d==='right') move(1,0,'right');
-    });
-  });
+  // Virtual joystick: drag the knob to steer freely, analog-style
+  const inputVec = { x:0, y:0 };
+  const stickVec = { x:0, y:0 };
+  const keyVec = { up:false, down:false, left:false, right:false };
+  (function setupJoystick(){
+    const stick = document.getElementById('joystick');
+    const knob = document.getElementById('joystickKnob');
+    const RADIUS = 50, DEADZONE = 10;
+    let dragging = false, center = {x:0,y:0};
+
+    function onDown(e){
+      dragging = true;
+      const r = stick.getBoundingClientRect();
+      center = { x:r.left + r.width/2, y:r.top + r.height/2 };
+      stick.setPointerCapture && e.pointerId!=null && stick.setPointerCapture(e.pointerId);
+      onMove(e);
+    }
+    function onMove(e){
+      if(!dragging) return;
+      const dx = e.clientX - center.x, dy = e.clientY - center.y;
+      const dist = Math.hypot(dx,dy);
+      const clamped = Math.min(dist, RADIUS);
+      const ang = Math.atan2(dy,dx);
+      const kx = Math.cos(ang)*clamped, ky = Math.sin(ang)*clamped;
+      knob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+      if(dist < DEADZONE){ stickVec.x = 0; stickVec.y = 0; }
+      else{ stickVec.x = (kx/RADIUS); stickVec.y = (ky/RADIUS); }
+    }
+    function onUp(){
+      dragging = false; stickVec.x = 0; stickVec.y = 0;
+      knob.style.transform = 'translate(-50%,-50%)';
+    }
+    stick.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  })();
 
   window.addEventListener('keydown', (e)=>{
     switch(e.key){
-      case 'ArrowUp': case 'w': case 'W': move(0,-1,'up'); break;
-      case 'ArrowDown': case 's': case 'S': move(0,1,'down'); break;
-      case 'ArrowLeft': case 'a': case 'A': move(-1,0,'left'); break;
-      case 'ArrowRight': case 'd': case 'D': move(1,0,'right'); break;
+      case 'ArrowUp': case 'w': case 'W': keyVec.up=true; break;
+      case 'ArrowDown': case 's': case 'S': keyVec.down=true; break;
+      case 'ArrowLeft': case 'a': case 'A': keyVec.left=true; break;
+      case 'ArrowRight': case 'd': case 'D': keyVec.right=true; break;
       case ' ': case 'Enter': case 'e': case 'E': action(); break;
     }
   });
+  window.addEventListener('keyup', (e)=>{
+    switch(e.key){
+      case 'ArrowUp': case 'w': case 'W': keyVec.up=false; break;
+      case 'ArrowDown': case 's': case 'S': keyVec.down=false; break;
+      case 'ArrowLeft': case 'a': case 'A': keyVec.left=false; break;
+      case 'ArrowRight': case 'd': case 'D': keyVec.right=false; break;
+    }
+  });
 
-  function drawTile(x,y){
-    const t = tileAt(x,y);
-    const px = x*TILE, py = y*TILE;
+  function camera(){
+    const camX = Math.max(0, Math.min(COLS-VIEW_COLS, state.px + 0.5 - VIEW_COLS/2));
+    const camY = Math.max(0, Math.min(ROWS-VIEW_ROWS, state.py + 0.5 - VIEW_ROWS/2));
+    return {camX, camY};
+  }
+
+  function drawTile(wx, wy, sx, sy){
+    const t = tileAt(wx,wy);
+    const px = sx*TILE, py = sy*TILE;
     if(t==='0'){
-      ctx.fillStyle = (x+y)%2===0 ? '#a8c973' : '#9fc26a';
+      ctx.fillStyle = (wx+wy)%2===0 ? '#a8c973' : '#9fc26a';
       ctx.fillRect(px,py,TILE,TILE);
     } else if(t==='3'){
-      ctx.fillStyle = '#d9c48a';
+      ctx.fillStyle = '#e8dcae';
       ctx.fillRect(px,py,TILE,TILE);
-    } else if(t==='2'){
+      ctx.fillStyle = 'rgba(0,0,0,0.07)';
+      ctx.fillRect(px+3,py+3,TILE-6,TILE-6);
+    } else if(t==='8'){
+      ctx.fillStyle = '#a8c973';
+      ctx.fillRect(px,py,TILE,TILE);
+      ctx.fillStyle = '#8a4a32';
+      ctx.fillRect(px+3,py+TILE/2-7,TILE-6,6);
       ctx.fillStyle = '#c97b5f';
+      ctx.fillRect(px+TILE/2-3,py+4,6,TILE-8);
+    } else if(t==='6'){
+      ctx.fillStyle = '#a8c973';
       ctx.fillRect(px,py,TILE,TILE);
-      ctx.fillStyle = '#7a4632';
-      ctx.fillRect(px+4,py+TILE-14,TILE-8,14);
-      ctx.fillStyle = '#fff8ec';
-      ctx.font = '9px monospace';
-      ctx.fillText('店', px+TILE/2-5, py+TILE/2+3);
+      drawSprite(px, py, TREE_SPRITE, TREE_PALETTE, TILE/16, false);
+    } else if(t==='7'){
+      ctx.fillStyle = '#6ea8d8';
+      ctx.fillRect(px,py,TILE,TILE);
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.beginPath(); ctx.moveTo(px+4,py+TILE/2); ctx.lineTo(px+TILE-4,py+TILE/2); ctx.stroke();
+    } else if(t==='a'||t==='b'||t==='c'){
+      ctx.fillStyle = '#2d3548';
+      ctx.fillRect(px,py,TILE,TILE);
+      if(t==='b'){ ctx.fillStyle = '#465577'; ctx.fillRect(px+2,py+3,TILE-4,3); }
+    } else if(t==='d'||t==='e'||t==='f'){
+      ctx.fillStyle = '#b0453a';
+      ctx.fillRect(px,py,TILE,TILE);
+      ctx.fillStyle = '#7a2f26';
+      ctx.fillRect(px,py,TILE,4);
+      if(t==='e'){
+        ctx.fillStyle = '#4a2a1a';
+        ctx.fillRect(px+5,py+6,TILE-10,TILE-8);
+        ctx.strokeStyle = '#2a1810';
+        ctx.beginPath(); ctx.moveTo(px+TILE/2,py+6); ctx.lineTo(px+TILE/2,py+TILE-2); ctx.stroke();
+      } else {
+        ctx.fillStyle = '#6ea8d8';
+        ctx.fillRect(px+TILE/2-6,py+6,12,10);
+        ctx.strokeStyle = '#3d3220';
+        ctx.strokeRect(px+TILE/2-6,py+6,12,10);
+      }
+    } else if(t==='2'){
+      ctx.fillStyle = '#a8c973';
+      ctx.fillRect(px,py,TILE,TILE);
+      drawSprite(px, py, HOUSE_SPRITE, HOUSE_PALETTE, TILE/16, false);
     } else if(t==='4'){
       ctx.fillStyle = '#a8c973';
       ctx.fillRect(px,py,TILE,TILE);
@@ -461,21 +675,15 @@
       ctx.font = '9px monospace';
       ctx.fillText('鶏', px+TILE/2-5, py+TILE/2+5);
     } else if(t==='1'){
-      const ft = farmTile(x,y);
+      const ft = farmTile(wx,wy);
       ctx.fillStyle = ft.tilled ? '#6b3f26' : '#8b5a3c';
       ctx.fillRect(px,py,TILE,TILE);
-      // furrows
       ctx.strokeStyle = 'rgba(0,0,0,0.15)';
       for(let i=6;i<TILE;i+=8){ ctx.beginPath(); ctx.moveTo(px+i,py); ctx.lineTo(px+i,py+TILE); ctx.stroke(); }
-      if(ft.planted){
-        const g = ft.growth;
-        ctx.fillStyle = g>=3 ? '#e8b13a' : '#5fa85f';
-        const h = 6 + g*6;
-        ctx.fillRect(px+TILE/2-3, py+TILE-h, 6, h);
-        if(g>=3){
-          ctx.fillStyle = '#f4d06a';
-          ctx.beginPath(); ctx.arc(px+TILE/2, py+TILE-h-4, 5, 0, Math.PI*2); ctx.fill();
-        }
+      if(ft.planted && ft.growth>=1){
+        const stage = ft.growth===1 ? SPROUT_SPRITE : ft.growth===2 ? GROWING_SPRITE : MATURE_SPRITE;
+        const pal = ft.growth>=3 ? WHEAT_RIPE_PALETTE : WHEAT_PALETTE;
+        drawSprite(px, py, stage, pal, TILE/16, false);
       }
       if(ft.watered){
         ctx.fillStyle = 'rgba(110,168,216,0.35)';
@@ -484,22 +692,51 @@
     }
   }
 
-  function drawPlayer(){
-    const px = state.x*TILE, py = state.y*TILE;
+  function drawPlayer(camX, camY){
+    const px = (state.px-camX)*TILE, py = (state.py-camY)*TILE;
     ctx.fillStyle = 'rgba(0,0,0,0.2)';
     ctx.beginPath(); ctx.ellipse(px+TILE/2, py+TILE-3, TILE*0.28, 4, 0, 0, Math.PI*2); ctx.fill();
     const scale = TILE/16;
-    drawSprite(px, py, PERSON_SPRITE, PLAYER_PALETTE, scale, state.dir==='left');
+    let sprite = PERSON_SPRITE, flip = false;
+    if(state.dir==='up') sprite = BACK_SPRITE;
+    else if(state.dir==='left'){ sprite = SIDE_SPRITE; flip = true; }
+    else if(state.dir==='right'){ sprite = SIDE_SPRITE; flip = false; }
+    drawSprite(px, py, sprite, PLAYER_PALETTE, scale, flip);
   }
 
   function draw(){
-    for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++) drawTile(x,y);
-    drawPlayer();
+    const {camX, camY} = camera();
+    const startX = Math.floor(camX), startY = Math.floor(camY);
+    for(let wy=startY; wy<=startY+VIEW_ROWS; wy++){
+      for(let wx=startX; wx<=startX+VIEW_COLS; wx++){
+        const sx = (wx-camX)*TILE, sy = (wy-camY)*TILE;
+        drawTile(wx, wy, sx/TILE, sy/TILE);
+      }
+    }
+    drawPlayer(camX, camY);
   }
 
   load();
   updateHud();
-  draw();
+
+  let lastT = null;
+  function loop(t){
+    if(lastT===null) lastT = t;
+    const dt = Math.min((t-lastT)/1000, 0.05);
+    lastT = t;
+    let vx = stickVec.x, vy = stickVec.y;
+    if(vx===0 && vy===0){
+      if(keyVec.left) vx -= 1;
+      if(keyVec.right) vx += 1;
+      if(keyVec.up) vy -= 1;
+      if(keyVec.down) vy += 1;
+    }
+    updatePosition(dt, vx, vy);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  setInterval(save, 2500);
 })();
 </script>
 </body>
