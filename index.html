@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>のんびり農場</title>
 <style>
   :root{
@@ -62,7 +62,9 @@
     background:var(--panel); border:2px solid var(--ink); border-radius:8px;
     color:var(--ink); font-family:inherit; font-size:0.85rem;
     padding:10px; cursor:pointer; user-select:none; -webkit-user-select:none;
+    touch-action:manipulation;
   }
+  .wrap, .hud, .msg, .controls{ touch-action:manipulation; }
   button:active{ background:var(--accent); color:#fff; }
   .actions{
     display:grid; grid-template-columns:1fr 1fr; gap:6px; width:100%;
@@ -174,6 +176,13 @@
 
 <script>
 (function(){
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', (e)=>{
+    const now = Date.now();
+    if(now - lastTouchEnd <= 350){ e.preventDefault(); }
+    lastTouchEnd = now;
+  }, { passive:false });
+
   const TILE = 36, COLS = 10, ROWS = 7;
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
