@@ -50,30 +50,30 @@
     width:100%; max-width:480px;
   }
   .dpad{
-    display:grid; grid-template-columns:repeat(3,48px); grid-template-rows:repeat(3,48px);
-    gap:4px;
+    display:grid; grid-template-columns:repeat(3,64px); grid-template-rows:repeat(3,64px);
+    gap:6px;
   }
-  .dpad button{ grid-column:auto; }
+  .dpad button{ grid-column:auto; font-size:1.4rem; }
   .dpad .up{grid-column:2; grid-row:1;}
   .dpad .left{grid-column:1; grid-row:2;}
   .dpad .down{grid-column:2; grid-row:2;}
   .dpad .right{grid-column:3; grid-row:2;}
   button{
-    background:var(--panel); border:2px solid var(--ink); border-radius:8px;
+    background:var(--panel); border:2px solid var(--ink); border-radius:10px;
     color:var(--ink); font-family:inherit; font-size:0.85rem;
     padding:10px; cursor:pointer; user-select:none; -webkit-user-select:none;
     touch-action:manipulation;
   }
   .wrap, .hud, .msg, .controls{ touch-action:manipulation; }
   button:active{ background:var(--accent); color:#fff; }
-  .actions{
-    display:grid; grid-template-columns:1fr 1fr; gap:6px; width:100%;
+  .big-row{
+    display:flex; gap:8px; width:100%;
   }
-  .actions button{ font-size:0.78rem; padding:10px 4px; }
-  .row2{
-    display:flex; gap:6px; width:100%; max-width:480px;
+  .big-btn{
+    flex:1; font-size:1rem; padding:16px 8px; font-weight:bold; border-radius:12px;
   }
-  .row2 button{ flex:1; font-size:0.78rem; }
+  #btnAction{ background:var(--accent2); color:#fff; border-color:var(--accent2); }
+  #btnSleep{ background:#5b6fa8; color:#fff; border-color:#5b6fa8; }
   .shop{
     position:fixed; inset:0; background:rgba(0,0,0,0.5);
     display:none; align-items:center; justify-content:center; z-index:10;
@@ -112,18 +112,16 @@
       display:flex; flex-direction:column; gap:6px; width:190px;
     }
     .msg{ font-size:0.75rem; max-width:190px; }
-    .actions{ grid-template-columns:1fr 1fr; }
-    .actions button{ padding:7px 4px; font-size:0.7rem; }
-    .row2 button{ padding:7px 4px; font-size:0.7rem; }
+    .big-btn{ padding:12px 6px; font-size:0.85rem; }
     .dpad{
-      grid-template-columns:repeat(3,38px); grid-template-rows:repeat(3,38px);
+      grid-template-columns:repeat(3,50px); grid-template-rows:repeat(3,50px);
     }
   }
 </style>
 </head>
 <body>
   <h1>🌾 のんびり農場</h1>
-  <p class="sub">矢印/WASDで移動・タップ操作対応</p>
+  <p class="sub">矢印/WASDで移動・アクションボタンで畑仕事/会話/お世話</p>
 
   <div class="wrap">
     <div class="left-col">
@@ -131,28 +129,25 @@
         <span>💰 <b id="gold">50</b> G</span>
         <span>📅 <b id="day">1</b> 日目</span>
         <span>⚡ <b id="stamina">10</b>/10</span>
-        <span>🎒 種 <b id="seeds">3</b></span>
+        <span>🎒 <b id="seeds">3</b></span>
+        <span>🥚 <b id="eggs">0</b></span>
       </div>
       <canvas id="game" width="360" height="280"></canvas>
     </div>
     <div class="right-col">
-      <div class="msg" id="msg">畑で W を押すと耕せるよ</div>
+      <div class="msg" id="msg">畑まで歩いて「アクション」を押してみて</div>
       <div class="controls">
-        <div class="actions">
-          <button id="btnTill">🪓 耕す</button>
-          <button id="btnPlant">🌱 植える</button>
-          <button id="btnWater">💧 水やり</button>
-          <button id="btnHarvest">🧺 収穫</button>
-        </div>
-        <div class="row2">
-          <button id="btnShop">🏪 お店</button>
-          <button id="btnSleep">🌙 寝る(翌日へ)</button>
-        </div>
         <div class="dpad">
           <button class="up" data-dir="up">↑</button>
           <button class="left" data-dir="left">←</button>
           <button class="down" data-dir="down">↓</button>
           <button class="right" data-dir="right">→</button>
+        </div>
+        <div class="big-row">
+          <button class="big-btn" id="btnAction">⚡ アクション</button>
+        </div>
+        <div class="big-row">
+          <button class="big-btn" id="btnSleep">🌙 寝る(翌日へ)</button>
         </div>
       </div>
     </div>
@@ -168,6 +163,10 @@
       <div class="shop-item">
         <span>収穫物を売る (1個 10G)</span>
         <button id="sellCrop">売る</button>
+      </div>
+      <div class="shop-item">
+        <span>卵を売る (1個 15G)</span>
+        <button id="sellEgg">売る</button>
       </div>
       <p class="sub" id="shopInfo" style="margin-top:8px;"></p>
       <button class="close-shop" id="closeShop">閉じる</button>
@@ -196,13 +195,13 @@
 
   const SAVE_KEY = 'nonbiri-farm-save-v1';
 
-  // Map layout: 0 grass, 1 soil(farmable), 2 shop, 3 path
+  // Map: 0 grass, 1 soil, 2 shop, 3 path, 4 NPC, 5 chicken coop
   const layout = [
     "00000000000000",
-    "01111113000000",
+    "01111113000400",
     "01111113000000",
     "01111113022000",
-    "01111113000000",
+    "01111113000500",
     "01111113000000",
     "00000003000000",
     "00000000000000",
@@ -211,7 +210,8 @@
 
   let state = {
     x:4, y:3, dir:'down',
-    gold:50, day:1, stamina:10, seeds:3, harvested:0,
+    gold:50, day:1, stamina:10, seeds:3, harvested:0, eggs:0,
+    chicken:{ fed:false, eggReady:false },
     tiles:{} // "x,y" -> {tilled, planted, growth, watered}
   };
 
@@ -226,7 +226,41 @@
     catch(e){ console.warn('save failed', e); }
   }
 
-  function tileAt(x,y){ return layout[y] ? layout[y][x] : '0'; }
+  // 16x16 pixel-art humanoid sprite (chibi villager), reused for player & NPCs
+  const PERSON_SPRITE = [
+    "................",
+    "......HHHH......",
+    ".....HHHHHH.....",
+    ".....HSSSSH.....",
+    ".....HSSSSH.....",
+    ".....SSEESS.....",
+    "......SSSS......",
+    ".......SS.......",
+    "......BBBB......",
+    ".....BBBBBB.....",
+    ".....BBBBBB.....",
+    ".....BB..BB.....",
+    "......BBBB......",
+    "......PPPP......",
+    ".....PP..PP.....",
+    ".....OO..OO.....",
+  ];
+  function drawSprite(px, py, sprite, palette, scale, flip){
+    ctx.save();
+    if(flip){ ctx.translate(px + sprite[0].length*scale, py); ctx.scale(-1,1); px = 0; py = 0; }
+    for(let ry=0; ry<sprite.length; ry++){
+      const row = sprite[ry];
+      for(let rx=0; rx<row.length; rx++){
+        const c = row[rx];
+        if(c==='.') continue;
+        ctx.fillStyle = palette[c];
+        ctx.fillRect(px + rx*scale, py + ry*scale, scale, scale);
+      }
+    }
+    ctx.restore();
+  }
+  const PLAYER_PALETTE = { H:'#5b3a29', S:'#f2c58a', E:'#2a2118', B:'#e29b3f', P:'#4a3a2a', O:'#2a2118' };
+  const NPC_PALETTE    = { H:'#8a4a3a', S:'#f2c58a', E:'#2a2118', B:'#6fa86f', P:'#4a3a2a', O:'#2a2118' };
   function key(x,y){ return x+','+y; }
   function farmTile(x,y){
     const k = key(x,y);
@@ -240,20 +274,22 @@
     document.getElementById('day').textContent = state.day;
     document.getElementById('stamina').textContent = state.stamina;
     document.getElementById('seeds').textContent = state.seeds;
+    document.getElementById('eggs').textContent = state.eggs;
   }
 
   function move(dx,dy,dir){
     state.dir = dir;
     const nx = state.x+dx, ny = state.y+dy;
     if(nx<0||ny<0||nx>=COLS||ny>=ROWS) return;
-    if(tileAt(nx,ny)==='2'){ return; } // shop blocks movement, open via button near it
+    const t = tileAt(nx,ny);
+    if(t==='2'||t==='4'||t==='5'){ return; } // solid: shop, NPC, coop
     state.x = nx; state.y = ny;
     draw(); save();
   }
 
-  function nearShop(){
+  function nearType(type){
     for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
-      if(tileAt(state.x+dx, state.y+dy)==='2') return true;
+      if(tileAt(state.x+dx, state.y+dy)===type) return true;
     }
     return false;
   }
@@ -264,66 +300,87 @@
     return true;
   }
 
-  function till(){
-    if(tileAt(state.x,state.y) !== '1'){ setMsg('ここは畑じゃないよ'); return; }
+  function action(){
+    const cur = tileAt(state.x,state.y);
+    if(cur==='1'){ farmAction(); return; }
+    if(nearType('2')){ openShop(); return; }
+    if(nearType('4')){ talkNPC(); return; }
+    if(nearType('5')){ chickenAction(); return; }
+    setMsg('ここでは何もできないみたい');
+  }
+
+  function farmAction(){
     const t = farmTile(state.x,state.y);
-    if(t.tilled){ setMsg('もう耕してあるよ'); return; }
-    if(!useStamina(1)) return;
-    t.tilled = true;
-    setMsg('土を耕したよ🪓');
+    if(!t.tilled){
+      if(!useStamina(1)) return;
+      t.tilled = true;
+      setMsg('土を耕したよ🪓');
+    } else if(!t.planted){
+      if(state.seeds<=0){ setMsg('種がないよ。お店で買おう🏪'); return; }
+      if(!useStamina(1)) return;
+      t.planted = true; t.growth = 0; t.watered = false;
+      state.seeds--;
+      setMsg('種を植えたよ🌱');
+    } else if(t.growth>=3){
+      state.harvested++;
+      t.planted = false; t.tilled = false; t.growth = 0; t.watered = false;
+      setMsg('収穫した!🧺 お店で売れるよ');
+    } else if(!t.watered){
+      if(!useStamina(1)) return;
+      t.watered = true;
+      setMsg('水をあげたよ💧');
+    } else {
+      setMsg('今日はもうやることないよ。育つまで待とう');
+    }
     updateHud(); draw(); save();
   }
 
-  function plant(){
-    if(tileAt(state.x,state.y) !== '1'){ setMsg('ここは畑じゃないよ'); return; }
-    const t = farmTile(state.x,state.y);
-    if(!t.tilled){ setMsg('先に耕さないと'); return; }
-    if(t.planted){ setMsg('もう植えてあるよ'); return; }
-    if(state.seeds<=0){ setMsg('種がないよ。お店で買おう'); return; }
-    if(!useStamina(1)) return;
-    t.planted = true; t.growth = 0; t.watered = false;
-    state.seeds--;
-    setMsg('種を植えたよ🌱');
-    updateHud(); draw(); save();
+  const npcLines = [
+    '今日もいい天気だね〜',
+    '畑仕事は順調?',
+    'お店で種を買えるよ🏪',
+    'たまには休むのも大事だよ',
+    'この村、のんびりしてていいでしょ',
+    'ニワトリにもエサあげてる?',
+    '雨の日は水やりしなくても育つらしいよ'
+  ];
+  function talkNPC(){
+    setMsg('👩 ' + npcLines[Math.floor(Math.random()*npcLines.length)]);
   }
 
-  function water(){
-    if(tileAt(state.x,state.y) !== '1'){ setMsg('ここは畑じゃないよ'); return; }
-    const t = farmTile(state.x,state.y);
-    if(!t.planted){ setMsg('何も植えてないよ'); return; }
-    if(t.watered){ setMsg('今日はもう水やりしたよ'); return; }
+  function chickenAction(){
+    if(state.chicken.eggReady){
+      state.eggs++;
+      state.chicken.eggReady = false;
+      setMsg('卵を集めたよ🥚');
+      updateHud(); save(); return;
+    }
+    if(state.chicken.fed){
+      setMsg('もうエサはあげたよ'); return;
+    }
     if(!useStamina(1)) return;
-    t.watered = true;
-    setMsg('水をあげたよ💧');
-    updateHud(); draw(); save();
-  }
-
-  function harvest(){
-    if(tileAt(state.x,state.y) !== '1'){ setMsg('ここは畑じゃないよ'); return; }
-    const t = farmTile(state.x,state.y);
-    if(!t.planted || t.growth < 3){ setMsg('まだ収穫できないよ'); return; }
-    state.harvested++;
-    t.planted = false; t.tilled = false; t.growth = 0; t.watered = false;
-    setMsg('収穫した!🧺 お店で売れるよ');
-    updateHud(); draw(); save();
+    state.chicken.fed = true;
+    setMsg('ニワトリにエサをあげたよ🐔');
+    updateHud(); save();
   }
 
   function sleep(){
-    // grow watered crops
+    const isRain = Math.random() < 0.3;
     Object.values(state.tiles).forEach(t=>{
-      if(t.planted && t.watered && t.growth<3){ t.growth++; }
+      if(t.planted && (t.watered || isRain) && t.growth<3){ t.growth++; }
       t.watered = false;
     });
+    if(state.chicken.fed){ state.chicken.eggReady = true; }
+    state.chicken.fed = false;
     state.day++;
     state.stamina = 10;
-    setMsg('おやすみ…🌙 また新しい一日だよ');
+    setMsg(isRain ? '雨の音…🌧️ 畑は自動で水やりされたよ' : 'おやすみ…🌙 また新しい一日だよ');
     updateHud(); draw(); save();
   }
 
   function openShop(){
-    if(!nearShop()){ setMsg('お店の近くまで行こう🏪'); return; }
     document.getElementById('shopModal').classList.add('open');
-    document.getElementById('shopInfo').textContent = `収穫物ストック: ${state.harvested}個`;
+    document.getElementById('shopInfo').textContent = `収穫物: ${state.harvested}個 / 卵: ${state.eggs}個`;
   }
   function closeShop(){ document.getElementById('shopModal').classList.remove('open'); }
 
@@ -331,23 +388,26 @@
     if(state.gold<5){ setMsg('お金が足りないよ'); return; }
     state.gold -= 5; state.seeds++;
     updateHud();
-    document.getElementById('shopInfo').textContent = `種を買ったよ🌱 残り収穫物: ${state.harvested}個`;
+    document.getElementById('shopInfo').textContent = `種を買ったよ🌱 収穫物: ${state.harvested}個 / 卵: ${state.eggs}個`;
     save();
   };
   document.getElementById('sellCrop').onclick = ()=>{
     if(state.harvested<=0){ setMsg('売れる収穫物がないよ'); return; }
     state.harvested--; state.gold += 10;
     updateHud();
-    document.getElementById('shopInfo').textContent = `売れたよ!収穫物: ${state.harvested}個`;
+    document.getElementById('shopInfo').textContent = `売れたよ!収穫物: ${state.harvested}個 / 卵: ${state.eggs}個`;
+    save();
+  };
+  document.getElementById('sellEgg').onclick = ()=>{
+    if(state.eggs<=0){ setMsg('売れる卵がないよ'); return; }
+    state.eggs--; state.gold += 15;
+    updateHud();
+    document.getElementById('shopInfo').textContent = `卵が売れたよ🥚 収穫物: ${state.harvested}個 / 卵: ${state.eggs}個`;
     save();
   };
   document.getElementById('closeShop').onclick = closeShop;
-  document.getElementById('btnShop').onclick = openShop;
   document.getElementById('btnSleep').onclick = sleep;
-  document.getElementById('btnTill').onclick = till;
-  document.getElementById('btnPlant').onclick = plant;
-  document.getElementById('btnWater').onclick = water;
-  document.getElementById('btnHarvest').onclick = harvest;
+  document.getElementById('btnAction').onclick = action;
 
   document.querySelectorAll('.dpad button').forEach(b=>{
     b.addEventListener('click', ()=>{
@@ -365,11 +425,7 @@
       case 'ArrowDown': case 's': case 'S': move(0,1,'down'); break;
       case 'ArrowLeft': case 'a': case 'A': move(-1,0,'left'); break;
       case 'ArrowRight': case 'd': case 'D': move(1,0,'right'); break;
-      case '1': till(); break;
-      case '2': plant(); break;
-      case '3': water(); break;
-      case '4': harvest(); break;
-      case 'e': case 'E': openShop(); break;
+      case ' ': case 'Enter': case 'e': case 'E': action(); break;
     }
   });
 
@@ -390,6 +446,20 @@
       ctx.fillStyle = '#fff8ec';
       ctx.font = '9px monospace';
       ctx.fillText('店', px+TILE/2-5, py+TILE/2+3);
+    } else if(t==='4'){
+      ctx.fillStyle = '#a8c973';
+      ctx.fillRect(px,py,TILE,TILE);
+      drawSprite(px, py, PERSON_SPRITE, NPC_PALETTE, TILE/16, false);
+    } else if(t==='5'){
+      ctx.fillStyle = '#a8c973';
+      ctx.fillRect(px,py,TILE,TILE);
+      ctx.fillStyle = '#c9955f';
+      ctx.fillRect(px+4,py+8,TILE-8,TILE-14);
+      ctx.fillStyle = '#7a5a35';
+      ctx.beginPath(); ctx.moveTo(px+2,py+8); ctx.lineTo(px+TILE/2,py-2); ctx.lineTo(px+TILE-2,py+8); ctx.fill();
+      ctx.fillStyle = '#fff8ec';
+      ctx.font = '9px monospace';
+      ctx.fillText('鶏', px+TILE/2-5, py+TILE/2+5);
     } else if(t==='1'){
       const ft = farmTile(x,y);
       ctx.fillStyle = ft.tilled ? '#6b3f26' : '#8b5a3c';
@@ -416,18 +486,10 @@
 
   function drawPlayer(){
     const px = state.x*TILE, py = state.y*TILE;
-    ctx.fillStyle = '#f2c14e';
-    ctx.beginPath(); ctx.arc(px+TILE/2, py+TILE/2-4, 9, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#5b3a29';
-    ctx.fillRect(px+TILE/2-8, py+TILE/2+2, 16, 14);
-    // direction indicator
-    ctx.fillStyle = '#3d3220';
-    let ix=px+TILE/2, iy=py+TILE/2-4;
-    if(state.dir==='up') iy-=10;
-    if(state.dir==='down') iy+=10;
-    if(state.dir==='left') ix-=10;
-    if(state.dir==='right') ix+=10;
-    ctx.fillRect(ix-2,iy-2,4,4);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath(); ctx.ellipse(px+TILE/2, py+TILE-3, TILE*0.28, 4, 0, 0, Math.PI*2); ctx.fill();
+    const scale = TILE/16;
+    drawSprite(px, py, PERSON_SPRITE, PLAYER_PALETTE, scale, state.dir==='left');
   }
 
   function draw(){
