@@ -139,6 +139,7 @@
         <span>🪨 <b id="stone">0</b></span>
         <span>🔩 <b id="iron">0</b></span>
         <span>🥛 <b id="milk">0</b></span>
+        <span>🐟 <b id="fish">0</b></span>
       </div>
       <canvas id="game" width="360" height="280"></canvas>
     </div>
@@ -177,9 +178,9 @@
 
   <div class="shop" id="gateModal">
     <div class="shop-box">
-      <h2>🚪 北の山への門</h2>
-      <p class="sub">通行料500Gを払うと門が開いて、北の山に行けるようになります。</p>
-      <div class="shop-item"><span>通行料 500G</span><button id="payGate">支払う</button></div>
+      <h2 id="gateTitle">🚪 北の山への門</h2>
+      <p class="sub" id="gateDesc">通行料500Gを払うと門が開いて、北の山に行けるようになります。</p>
+      <div class="shop-item"><span id="gateCostLabel">通行料 500G</span><button id="payGate">支払う</button></div>
       <p class="sub" id="gateInfo" style="margin-top:8px;"></p>
       <button class="close-shop" id="closeGate">閉じる</button>
     </div>
@@ -210,7 +211,7 @@
         <button data-crop="corn" class="buySeed">買う</button>
       </div>
       <div class="shop-item">
-        <span>収穫物・みかん・牛乳をまとめて売る</span>
+        <span>収穫物・みかん・牛乳・魚をまとめて売る</span>
         <button id="sellCrop">売る</button>
       </div>
       <div class="shop-item">
@@ -316,6 +317,10 @@
   layout[7][21]='j';                 // pasture gate (1 tile, walkable by the player)
   // Toll gate (500G) set between the border trees
   layout[1][26]='G'; layout[1][27]='G';
+  // Bottom-left passage to the river area (2000G gate between the border trees)
+  fillRect(3,19,11,20,'3');
+  fillRect(3,19,4,21,'3');
+  layout[22][3]='Z'; layout[22][4]='Z'; layout[23][3]='U'; layout[23][4]='U';
   const treeKeys = [];
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(layout[y][x]==='6') treeKeys.push(x+','+y); }
 
@@ -353,7 +358,38 @@
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(NORTH[y][x]==='6') treeKeysN.push('n:'+x+','+y); }
   let curLayout = HOME;
 
-  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f']);
+  // ===== River area (several rivers, bridges, a fishing pier) =====
+  const RIVER = [];
+  for(let y=0;y<ROWS;y++){ const row=[]; for(let x=0;x<COLS;x++) row.push('0'); RIVER.push(row); }
+  function rfr(x0,y0,x1,y1,ch){ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){ if(RIVER[y] && RIVER[y][x]!==undefined) RIVER[y][x]=ch; } }
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    if((x*7+y*13)%9===0) RIVER[y][x]='6';
+    else if((x*5+y*11)%23===0) RIVER[y][x]='g';
+  }
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    if(x<2||y<2||x>=COLS-2||y>=ROWS-2) RIVER[y][x]='9';
+  }
+  rfr(10,2,11,21,'7');    // river A (north-south)
+  rfr(12,11,29,12,'7');   // river B (east-west)
+  rfr(24,13,25,21,'7');   // river C (north-south)
+  rfr(13,15,21,20,'7');   // lake
+  rfr(3,1,4,18,'3'); rfr(5,17,9,18,'3'); rfr(12,13,12,18,'3'); rfr(12,13,17,14,'3');
+  rfr(5,6,9,7,'3'); rfr(12,6,17,7,'3'); rfr(16,8,17,10,'3');
+  rfr(10,6,11,7,'B');     // bridge over river A
+  rfr(10,17,11,18,'B');   // second bridge over river A
+  rfr(16,11,17,12,'C');   // bridge over river B
+  rfr(24,17,25,18,'B');   // bridge over river C
+  rfr(17,15,17,18,'F');   // fishing pier (the only place you can fish)
+  RIVER[13][19]='4';      // fisherman NPC
+  RIVER[0][3]='V'; RIVER[0][4]='V';
+  clearAround(RIVER,19,13,19,13,2);
+  clearAround(RIVER,17,14,17,14,2);
+  clearAround(RIVER,3,2,4,2,2);
+  const treeKeysR = [];
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(RIVER[y][x]==='6') treeKeysR.push('r:'+x+','+y); }
+  const MAP_LAYOUTS = { home:HOME, north:NORTH, river:RIVER };
+
+  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f']);
 
   let state = {
     px:6, py:5, dir:'down',
@@ -361,7 +397,8 @@
     selectedCrop:'wheat', eggs:0, toolLevel:1,
     wood:0, mikan:0, treeHits:{}, chopped:{}, fruit:null,
     stone:0, iron:0, rockHits:{}, mined:{}, axeLevel:1, pickLevel:1, map:'home',
-    gateOpen:false, cows:[], milk:0, northHouse:false, totalHarvest:0,
+    gateOpen:false, cows:[], milk:0, northHouse:false, totalHarvest:0, gate2Open:false,
+    fish:{ minnow:0, ayu:0, carp:0, yamame:0, catfish:0 },
     chicken:{ fed:false, eggReady:false },
     tiles:{} // "x,y" -> {tilled, planted, growth, watered}
   };
@@ -614,14 +651,15 @@
     if(c==='6' && state.chopped[K(x,y)]!==undefined) return '0';
     if(c==='g' && state.mined[K(x,y)]!==undefined) return '0';
     if(c==='G' && state.gateOpen) return '3';
+    if(c==='Z' && state.gate2Open) return '3';
     if(state.northHouse){ const hm = HOUSE_MAP[c]; if(hm) return hm; }
     return c;
   }
   function tileX(){ return Math.round(state.px); }
   function tileY(){ return Math.round(state.py); }
-  function K(x,y){ return (state.map==='north' ? 'n:' : '') + x + ',' + y; }
+  function K(x,y){ return (state.map==='north' ? 'n:' : state.map==='river' ? 'r:' : '') + x + ',' + y; }
   function key(x,y){ return K(x,y); }
-  function parseKey(k){ const m = k.match(/^(n:)?(-?\d+),(-?\d+)$/); return { map: m[1]?'north':'home', x:+m[2], y:+m[3] }; }
+  function parseKey(k){ const m = k.match(/^(?:(n|r):)?(-?\d+),(-?\d+)$/); return { map: m[1]==='n'?'north':m[1]==='r'?'river':'home', x:+m[2], y:+m[3] }; }
   function farmTile(x,y){
     const k = key(x,y);
     if(!state.tiles[k]) state.tiles[k] = {tilled:false, planted:false, growth:0, watered:false, crop:null};
@@ -640,6 +678,7 @@
     document.getElementById('stone').textContent = state.stone;
     document.getElementById('iron').textContent = state.iron;
     document.getElementById('milk').textContent = state.milk;
+    document.getElementById('fish').textContent = fishCount();
   }
 
   function collides(px, py){
@@ -667,7 +706,7 @@
   }
 
   const WORK_CHARS = new Set(['h','i']);
-  const GATE_CHARS = new Set(['G']);
+  const GATE_CHARS = new Set(['G','Z']);
   const HOUSE_CHARS = new Set(['l','m','n','o','p','q']);
   const SITE_CHARS = new Set(['r','R','x','s','S','y']);
   const HOUSE_MAP = { r:'l', R:'m', x:'n', s:'o', S:'p', y:'q' };
@@ -690,11 +729,12 @@
   function action(){
     const cur = tileAt(tileX(), tileY());
     if(cur==='1'){ farmAction(); return; }
+    if(cur==='F'){ fishAction(); return; }
     if(nearAny(SHOP_CHARS)){ openShop(); return; }
     if(nearType('4')){ talkNPC(); return; }
     if(nearType('5')){ chickenAction(); return; }
     if(state.map==='home' && nearRanch()){ ranchAction(); return; }
-    if(nearAny(GATE_CHARS)){ openGate(); return; }
+    if(nearAny(GATE_CHARS)){ openGate(findNear('G') ? 'G' : 'Z'); return; }
     if(nearAny(HOUSE_CHARS)){ openSleep(); return; }
     if(nearAny(SITE_CHARS)){ openSite(); return; }
     if(nearAny(WORK_CHARS)){ openCraft(); return; }
@@ -764,18 +804,29 @@
     }
   }
 
-  // ---- Toll gate to the north ----
-  function openGate(){
+  // ---- Toll gates ----
+  const GATES = {
+    G:{ cost:500,  key:'gateOpen',  title:'🚪 北の山への門', desc:'通行料500Gを払うと門が開いて、北の山に行けるようになります。', done:'門が開いた!北の山へ行けるよ⛰️' },
+    Z:{ cost:2000, key:'gate2Open', title:'🚪 川の国への門', desc:'通行料2000Gを払うと門が開いて、川と橋と釣り場のあるエリアに行けるようになります。', done:'門が開いた!川の国へ行けるよ🏞️' },
+  };
+  let curGate = 'G';
+  function openGate(ch){
+    curGate = ch || 'G';
+    const g = GATES[curGate];
+    document.getElementById('gateTitle').textContent = g.title;
+    document.getElementById('gateDesc').textContent = g.desc;
+    document.getElementById('gateCostLabel').textContent = `通行料 ${g.cost}G`;
     document.getElementById('gateInfo').textContent = `所持金: ${state.gold}G`;
     document.getElementById('gateModal').classList.add('open');
   }
   document.getElementById('closeGate').onclick = ()=>document.getElementById('gateModal').classList.remove('open');
   document.getElementById('payGate').onclick = ()=>{
-    if(state.gold<500){ document.getElementById('gateInfo').textContent = `お金が足りないよ(あと${500-state.gold}G)`; return; }
-    state.gold -= 500; state.gateOpen = true;
+    const g = GATES[curGate];
+    if(state.gold<g.cost){ document.getElementById('gateInfo').textContent = `お金が足りないよ(あと${g.cost-state.gold}G)`; return; }
+    state.gold -= g.cost; state[g.key] = true;
     document.getElementById('gateModal').classList.remove('open');
     updateHud(); save();
-    setMsg('門が開いた!北の山へ行けるよ⛰️');
+    setMsg(g.done);
   };
   document.getElementById('buyCow').onclick = ()=>{
     if(state.cows.length>=4){ document.getElementById('shopInfo').textContent = '牧場はもう満員だよ(最大4頭)'; return; }
@@ -831,6 +882,75 @@
     updateHud(); save();
     setMsg('🏠 家が完成した!家でアクションすると1日を過ごせるよ');
   };
+
+  // ---- Fishing (only on the pier in the river area) ----
+  const FISH = {
+    minnow:  { label:'小魚',   emoji:'🐟', price:15,  w:45 },
+    ayu:     { label:'アユ',   emoji:'🐟', price:35,  w:25 },
+    carp:    { label:'コイ',   emoji:'🐠', price:60,  w:18 },
+    yamame:  { label:'ヤマメ', emoji:'🐡', price:90,  w:9 },
+    catfish: { label:'大ナマズ', emoji:'🐋', price:200, w:3 },
+  };
+  const fishing = { phase:'idle', t:0, bx:0, by:0 };
+  function fishCount(){ return Object.values(state.fish).reduce((a,b)=>a+b,0); }
+  function fishTarget(){
+    const fdx = state.dir==='left'?-1:state.dir==='right'?1:0;
+    const fdy = state.dir==='up'?-1:state.dir==='down'?1:0;
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]].sort((a,b)=>(b[0]*fdx+b[1]*fdy)-(a[0]*fdx+a[1]*fdy));
+    const tx = tileX(), ty = tileY();
+    for(const [dx,dy] of dirs) for(let d=1;d<=3;d++){
+      if(tileAt(tx+dx*d,ty+dy*d)==='7') return [tx+dx*d, ty+dy*d];
+    }
+    return null;
+  }
+  function pickFish(){
+    const keys = Object.keys(FISH);
+    let r = Math.random()*keys.reduce((a,k)=>a+FISH[k].w,0);
+    for(const k of keys){ r -= FISH[k].w; if(r<=0) return k; }
+    return keys[0];
+  }
+  function fishAction(){
+    if(fishing.phase==='idle'){
+      const tg = fishTarget();
+      if(!tg){ setMsg('水面が近くにないよ'); return; }
+      fishing.phase = 'wait'; fishing.t = 1.5 + Math.random()*3; fishing.bx = tg[0]; fishing.by = tg[1];
+      setMsg('釣り糸をたらした…🎣 「❗」が出たらアクション!');
+    } else if(fishing.phase==='wait'){
+      fishing.phase = 'idle';
+      setMsg('早すぎた!逃げられちゃった');
+    } else {
+      const k = pickFish(), f = FISH[k];
+      state.fish[k] = (state.fish[k]||0) + 1;
+      addEffect(fishing.bx, fishing.by, 'water');
+      fishing.phase = 'idle';
+      setMsg(`${f.emoji} ${f.label}が釣れた!(${f.price}G)`);
+      updateHud(); save();
+    }
+  }
+  function updateFishing(dt){
+    if(fishing.phase==='idle') return;
+    if(tileAt(tileX(),tileY())!=='F'){ fishing.phase = 'idle'; return; }
+    fishing.t -= dt;
+    if(fishing.t<=0){
+      if(fishing.phase==='wait'){ fishing.phase = 'bite'; fishing.t = 1.1; setMsg('❗ 引いてる!今すぐアクション!'); }
+      else { fishing.phase = 'idle'; setMsg('逃げられた…'); }
+    }
+  }
+  function drawFishing(camX,camY){
+    if(fishing.phase==='idle') return;
+    const sx = (state.px+0.5-camX)*TILE, sy = (state.py+0.4-camY)*TILE;
+    const bite = fishing.phase==='bite';
+    const bx = (fishing.bx+0.5-camX)*TILE;
+    const by = (fishing.by+0.5-camY)*TILE + (bite ? 3+Math.sin(performance.now()/50)*2.5 : Math.sin(performance.now()/300)*1.5);
+    const tipX = sx + (bx-sx)*0.3, tipY = sy - 14;
+    ctx.lineWidth = 2; ctx.strokeStyle = '#6b4a2a';
+    ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(tipX,tipY); ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.moveTo(tipX,tipY); ctx.lineTo(bx,by); ctx.stroke();
+    ctx.fillStyle = '#e04a3a'; ctx.beginPath(); ctx.arc(bx,by,3.5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillRect(bx-3.5,by-0.5,7,1.5);
+    if(bite){ ctx.font = Math.round(TILE*0.7)+'px sans-serif'; ctx.fillText('❗', sx-TILE*0.2, (state.py-camY)*TILE-6); }
+  }
 
   function findNear(ch){
     const tx = tileX(), ty = tileY();
@@ -958,9 +1078,17 @@
     'お店で種を買えるよ🏪',
     'たまには休むのも大事だよ',
     '家でアクションすると、1日を過ごせるよ🛏️',
+    '左下の門の先に川の国があるよ(通行料2000G)',
     'この村、のんびりしてていいでしょ',
     'ニワトリにもエサあげてる?',
     '雨の日は水やりしなくても育つらしいよ'
+  ];
+  const riverLines = [
+    '釣りは南東の湖の桟橋でしかできないんだ🎣',
+    '糸をたらして、「❗」が出たらすぐアクションだよ',
+    'いくつも橋を渡った先にいい釣り場があるよ',
+    '大ナマズは滅多に釣れない。釣れたら大金だ',
+    '釣った魚はお店で売れるよ'
   ];
   const northLines = [
     'ここの岩は硬いけど、鉄が出やすいんだ',
@@ -972,9 +1100,9 @@
     '南の建設予定地に家が建つらしいよ。材料と条件をそろえてね🏠'
   ];
   function talkNPC(){
-    const north = state.map==='north';
-    const lines = north ? northLines : npcLines;
-    setMsg((north ? '🧔 ' : '👩 ') + lines[Math.floor(Math.random()*lines.length)]);
+    const m = state.map;
+    const lines = m==='north' ? northLines : m==='river' ? riverLines : npcLines;
+    setMsg((m==='north' ? '🧔 ' : m==='river' ? '🧓 ' : '👩 ') + lines[Math.floor(Math.random()*lines.length)]);
   }
 
   function chickenAction(){
@@ -1012,7 +1140,7 @@
       const near = pk.map===state.map && Math.abs(state.px-x)<1.3 && Math.abs(state.py-y)<1.3;
       if(state.day - state.mined[k] >= 4 && !near) delete state.mined[k];
     }
-    for(const k of treeKeys.concat(treeKeysN)){
+    for(const k of treeKeys.concat(treeKeysN, treeKeysR)){
       if(state.chopped[k]===undefined && !state.fruit[k] && Math.random()<0.2) state.fruit[k] = true;
     }
     setMsg(isRain ? '雨の音…🌧️ 畑は自動で水やりされたよ' : 'おやすみ…🌙 また新しい一日だよ');
@@ -1068,7 +1196,7 @@
 
   function inventorySummary(){
     const cropsStr = Object.keys(CROPS).map(k=>`${CROPS[k].emoji}${state.harvestedByType[k]||0}`).join(' ');
-    return `収穫物: ${cropsStr} / 🪵${state.wood} 🪨${state.stone} 🔩${state.iron} 🍊${state.mikan} 🥛${state.milk} / 卵: ${state.eggs}個`;
+    return `収穫物: ${cropsStr} / 🪵${state.wood} 🪨${state.stone} 🔩${state.iron} 🍊${state.mikan} 🥛${state.milk} 🐟${fishCount()} / 卵: ${state.eggs}個`;
   }
 
   function openShop(){
@@ -1099,6 +1227,10 @@
     }
     if(state.mikan>0){ total += state.mikan*12; sold.push(`🍊${state.mikan}`); state.mikan = 0; }
     if(state.milk>0){ total += state.milk*30; sold.push(`🥛${state.milk}`); state.milk = 0; }
+    for(const k of Object.keys(FISH)){
+      const n = state.fish[k]||0;
+      if(n>0){ total += n*FISH[k].price; sold.push(`${FISH[k].emoji}${n}`); state.fish[k] = 0; }
+    }
     if(total===0){ setMsg('売れるものがないよ'); return; }
     state.gold += total;
     updateHud();
@@ -1209,6 +1341,27 @@
     if(t==='0'){
       ctx.fillStyle = GROUND;
       ctx.fillRect(px,py,TILE,TILE);
+    } else if(t==='B'||t==='C'){
+      ctx.fillStyle = '#6ea8d8'; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16;
+      ctx.fillStyle = '#b98a4e';
+      ctx.strokeStyle = 'rgba(90,58,32,0.55)';
+      if(t==='B'){
+        ctx.fillRect(px,py+2*u,TILE,12*u);
+        for(let i=0;i<4;i++){ ctx.beginPath(); ctx.moveTo(px+i*4*u+2*u,py+2*u); ctx.lineTo(px+i*4*u+2*u,py+14*u); ctx.stroke(); }
+        ctx.fillStyle = '#7a5230'; ctx.fillRect(px,py+1*u,TILE,2*u); ctx.fillRect(px,py+13*u,TILE,2*u);
+      } else {
+        ctx.fillRect(px+2*u,py,12*u,TILE);
+        for(let i=0;i<4;i++){ ctx.beginPath(); ctx.moveTo(px+2*u,py+i*4*u+2*u); ctx.lineTo(px+14*u,py+i*4*u+2*u); ctx.stroke(); }
+        ctx.fillStyle = '#7a5230'; ctx.fillRect(px+1*u,py,2*u,TILE); ctx.fillRect(px+13*u,py,2*u,TILE);
+      }
+    } else if(t==='F'){
+      ctx.fillStyle = '#6ea8d8'; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16;
+      ctx.fillStyle = '#c39a5c'; ctx.fillRect(px+3*u,py,10*u,TILE);
+      ctx.strokeStyle = 'rgba(90,58,32,0.55)';
+      for(let i=0;i<4;i++){ ctx.beginPath(); ctx.moveTo(px+3*u,py+i*4*u+2*u); ctx.lineTo(px+13*u,py+i*4*u+2*u); ctx.stroke(); }
+      ctx.fillStyle = '#6b4a2a'; ctx.fillRect(px+2*u,py,2*u,TILE); ctx.fillRect(px+12*u,py,2*u,TILE);
     } else if(t==='l'||t==='m'||t==='n'){
       drawSprite(px, py, t==='m' ? ROOF_MID_TEX : ROOF_TEX, HOUSE2_PALETTE, TILE/16, false);
     } else if(t==='o'||t==='p'||t==='q'){
@@ -1234,9 +1387,9 @@
       ctx.fillStyle = '#8a4a32';
       ctx.fillRect(px+4*u, py+5*u, 2*u, 8*u);
       ctx.fillRect(px+4*u, py+6*u, 4*u, 2*u); ctx.fillRect(px+4*u, py+10*u, 4*u, 2*u);
-    } else if(t==='G'){
+    } else if(t==='G'||t==='Z'){
       ctx.fillStyle = '#e8dcae'; ctx.fillRect(px,py,TILE,TILE);
-    } else if(t==='3'||t==='u'||t==='v'){
+    } else if(t==='3'||t==='u'||t==='v'||t==='U'||t==='V'){
       ctx.fillStyle = '#e8dcae';
       ctx.fillRect(px,py,TILE,TILE);
       ctx.fillStyle = 'rgba(0,0,0,0.07)';
@@ -1284,7 +1437,9 @@
       ctx.fillStyle = '#6ea8d8';
       ctx.fillRect(px,py,TILE,TILE);
       ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      ctx.beginPath(); ctx.moveTo(px+4,py+TILE/2); ctx.lineTo(px+TILE-4,py+TILE/2); ctx.stroke();
+      const wt = performance.now()/900;
+      const oy = ((Math.sin(wt+wx*0.9+wy*0.7)+1)/2)*(TILE-8)+4;
+      ctx.beginPath(); ctx.moveTo(px+4,py+oy); ctx.lineTo(px+TILE-4,py+oy); ctx.stroke();
     } else if(t==='a'||t==='b'||t==='c'){
       drawSprite(px, py, t==='b' ? ROOF_MID_TEX : ROOF_TEX, BUILDING_PALETTE, TILE/16, false);
     } else if(t==='d'||t==='e'||t==='f'){
@@ -1384,7 +1539,7 @@
   function addEffect(wx,wy,type,color){ effects.push({wx,wy,type,color,start:performance.now()}); }
 
   function draw(){
-    GROUND = state.map==='north' ? '#8fbf86' : '#a9c96e';
+    GROUND = state.map==='north' ? '#8fbf86' : state.map==='river' ? '#9fcf97' : '#a9c96e';
     const {camX, camY} = camera();
     const startX = Math.floor(camX), startY = Math.floor(camY);
     const trees = [];
@@ -1394,7 +1549,7 @@
         const sx = (wx-camX)*TILE, sy = (wy-camY)*TILE;
         const tt = tileAt(wx,wy);
         if(tt==='6'||tt==='9') trees.push([sx,sy,wx,wy,tt]);
-        if(tt==='G'||tt==='u'||tt==='v') overlays.push([sx,sy,wx,tt]);
+        if(tt==='G'||tt==='Z'||tt==='u'||tt==='v'||tt==='U'||tt==='V') overlays.push([sx,sy,wx,tt]);
         drawTile(wx, wy, sx/TILE, sy/TILE);
       }
     }
@@ -1419,7 +1574,7 @@
     // Gate and exit arrows on top of the border trees
     for(const [ox,oy,owx,ot] of overlays){
       const u = TILE/16;
-      if(ot==='G'){
+      if(ot==='G'||ot==='Z'){
         const left = (owx%2===0);
         ctx.fillStyle = '#8a5a34';
         ctx.fillRect(ox,oy+3*u,TILE,2*u); ctx.fillRect(ox,oy+9*u,TILE,2*u);
@@ -1429,7 +1584,7 @@
       } else {
         ctx.fillStyle = '#e0a030';
         ctx.beginPath();
-        if(ot==='u'){ ctx.moveTo(ox+TILE/2,oy+6); ctx.lineTo(ox+TILE-7,oy+TILE-7); ctx.lineTo(ox+7,oy+TILE-7); }
+        if(ot==='u'||ot==='V'){ ctx.moveTo(ox+TILE/2,oy+6); ctx.lineTo(ox+TILE-7,oy+TILE-7); ctx.lineTo(ox+7,oy+TILE-7); }
         else { ctx.moveTo(ox+TILE/2,oy+TILE-6); ctx.lineTo(ox+TILE-7,oy+7); ctx.lineTo(ox+7,oy+7); }
         ctx.fill();
       }
@@ -1468,6 +1623,7 @@
       ctx.globalAlpha = 1;
     }
     drawPlayer(camX, camY);
+    drawFishing(camX, camY);
     if(fadeStart){
       const a = 1 - (performance.now()-fadeStart)/600;
       if(a<=0) fadeStart = 0;
@@ -1476,19 +1632,23 @@
   }
 
   load();
-  curLayout = state.map==='north' ? NORTH : HOME;
-  if(!state.fruit){ state.fruit = {}; for(const k of treeKeys.concat(treeKeysN)) state.fruit[k] = Math.random()<0.25; }
+  curLayout = MAP_LAYOUTS[state.map] || HOME;
+  if(!state.fruit){ state.fruit = {}; for(const k of treeKeys.concat(treeKeysN, treeKeysR)) state.fruit[k] = Math.random()<0.25; }
   updateHud();
 
   function goMap(name){
+    const prev = state.map;
     state.map = name;
-    curLayout = name==='north' ? NORTH : HOME;
-    state.px = 26.5;
-    state.py = name==='north' ? ROWS-3 : 2;
-    state.dir = name==='north' ? 'up' : 'down';
-    effects = []; actionAnim = null;
+    curLayout = MAP_LAYOUTS[name];
+    if(name==='north'){ state.px = 26.5; state.py = ROWS-3; state.dir = 'up'; }
+    else if(name==='river'){ state.px = 3.5; state.py = 2; state.dir = 'down'; }
+    else if(prev==='river'){ state.px = 3.5; state.py = ROWS-3; state.dir = 'up'; }
+    else { state.px = 26.5; state.py = 2; state.dir = 'down'; }
+    effects = []; actionAnim = null; fishing.phase = 'idle';
     fadeStart = performance.now();
-    setMsg(name==='north' ? '⛰️ 北の山に来た!岩が鉄を含みやすいみたい' : '🏡 村に戻ってきた');
+    setMsg(name==='north' ? '⛰️ 北の山に来た!岩が鉄を含みやすいみたい'
+         : name==='river' ? '🏞️ 川の国に来た!釣りは南東の湖の桟橋でだけできるよ🎣'
+         : '🏡 村に戻ってきた');
     save();
   }
 
@@ -1508,6 +1668,9 @@
     const curT = tileAt(tileX(), tileY());
     if(curT==='u' && state.map==='home') goMap('north');
     else if(curT==='v' && state.map==='north') goMap('home');
+    else if(curT==='U' && state.map==='home') goMap('river');
+    else if(curT==='V' && state.map==='river') goMap('home');
+    updateFishing(dt);
     updateCows(dt);
     draw();
     requestAnimationFrame(loop);
