@@ -151,10 +151,27 @@
         <div class="big-row">
           <button class="big-btn" id="btnAction">⚡ アクション</button>
         </div>
-        <div class="big-row">
-          <button class="big-btn" id="btnSleep">🌙 寝る(翌日へ)</button>
-        </div>
       </div>
+    </div>
+  </div>
+
+  <div class="shop" id="sleepModal">
+    <div class="shop-box">
+      <h2>🛏️ 家</h2>
+      <p class="sub">1日を過ごして、翌日にしますか?(作物や牛が育ちます)</p>
+      <div class="shop-item"><span>翌日へ</span><button id="doSleep">寝る</button></div>
+      <button class="close-shop" id="closeSleep">やめる</button>
+    </div>
+  </div>
+
+  <div class="shop" id="siteModal">
+    <div class="shop-box">
+      <h2>🏗️ 家の建設予定地</h2>
+      <p class="sub">条件をすべて満たして材料を渡すと、家が完成します。</p>
+      <div id="siteList"></div>
+      <p class="sub" id="siteInfo" style="margin-top:8px;"></p>
+      <button class="close-shop" id="buildHouse">🏠 建設する</button>
+      <button class="close-shop" id="closeSite">閉じる</button>
     </div>
   </div>
 
@@ -271,6 +288,8 @@
     if(layout[y][x]==='0' && (x*3+y*7)%3===0) layout[y][x]='g';
   }
   layout[7][13]='h'; layout[7][14]='i'; // workbench (2 tiles wide)
+  layout[11][7]='l'; layout[11][8]='m'; layout[11][9]='n'; // my house: roof
+  layout[12][7]='o'; layout[12][8]='p'; layout[12][9]='q'; // my house: walls + door
   // Keep trees/rocks away from the shop, coop, workbench and NPC
   function clearAround(L,x0,y0,x1,y1,r){
     for(let y=y0-r;y<=y1+r;y++) for(let x=x0-r;x<=x1+r;x++){
@@ -281,6 +300,7 @@
   clearAround(layout,16,8,16,8,3);   // coop
   clearAround(layout,13,7,14,7,3);   // workbench
   clearAround(layout,13,4,13,4,2);   // NPC
+  clearAround(layout,7,11,9,12,2);   // my house
   // Unbreakable border forest (2 tiles thick)
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
     if(x<2||y<2||x>=COLS-2||y>=ROWS-2) layout[y][x]='9';
@@ -293,9 +313,9 @@
   for(let y=2;y<=7;y++) for(let x=19;x<=24;x++){
     layout[y][x] = (x===19||x===24||y===2||y===7) ? '8' : '0';
   }
-  // Fenced corridor + toll gate (500G) on the way to the north exit
-  fillRect(25,2,25,8,'8'); fillRect(28,2,28,8,'8');
-  layout[3][26]='G'; layout[3][27]='G';
+  layout[7][21]='j';                 // pasture gate (1 tile, walkable by the player)
+  // Toll gate (500G) set between the border trees
+  layout[1][26]='G'; layout[1][27]='G';
   const treeKeys = [];
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(layout[y][x]==='6') treeKeys.push(x+','+y); }
 
@@ -313,6 +333,8 @@
   nfr(17,11,22,14,'1');      // farm patch
   NORTH[7][16]='h'; NORTH[7][17]='i';  // workbench
   NORTH[7][20]='4';                    // hermit NPC
+  NORTH[18][18]='r'; NORTH[18][19]='R'; NORTH[18][20]='x';  // house construction site
+  NORTH[19][18]='s'; NORTH[19][19]='S'; NORTH[19][20]='y';
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
     if(NORTH[y][x]!=='0') continue;
     if(x<=12 && y<=11 && (x*5+y*7)%4===0) NORTH[y][x]='6';        // dense forest (west)
@@ -326,11 +348,12 @@
   NORTH[22][26]='3'; NORTH[22][27]='3'; NORTH[23][26]='v'; NORTH[23][27]='v';
   clearAround(NORTH,16,7,17,7,2);
   clearAround(NORTH,20,7,20,7,2);
+  clearAround(NORTH,18,18,20,19,2);
   const treeKeysN = [];
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(NORTH[y][x]==='6') treeKeysN.push('n:'+x+','+y); }
   let curLayout = HOME;
 
-  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','a','b','c','d','e','f']);
+  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f']);
 
   let state = {
     px:6, py:5, dir:'down',
@@ -338,7 +361,7 @@
     selectedCrop:'wheat', eggs:0, toolLevel:1,
     wood:0, mikan:0, treeHits:{}, chopped:{}, fruit:null,
     stone:0, iron:0, rockHits:{}, mined:{}, axeLevel:1, pickLevel:1, map:'home',
-    gateOpen:false, cows:[], milk:0,
+    gateOpen:false, cows:[], milk:0, northHouse:false, totalHarvest:0,
     chicken:{ fed:false, eggReady:false },
     tiles:{} // "x,y" -> {tilled, planted, growth, watered}
   };
@@ -591,6 +614,7 @@
     if(c==='6' && state.chopped[K(x,y)]!==undefined) return '0';
     if(c==='g' && state.mined[K(x,y)]!==undefined) return '0';
     if(c==='G' && state.gateOpen) return '3';
+    if(state.northHouse){ const hm = HOUSE_MAP[c]; if(hm) return hm; }
     return c;
   }
   function tileX(){ return Math.round(state.px); }
@@ -644,6 +668,13 @@
 
   const WORK_CHARS = new Set(['h','i']);
   const GATE_CHARS = new Set(['G']);
+  const HOUSE_CHARS = new Set(['l','m','n','o','p','q']);
+  const SITE_CHARS = new Set(['r','R','x','s','S','y']);
+  const HOUSE_MAP = { r:'l', R:'m', x:'n', s:'o', S:'p', y:'q' };
+  const HOUSE2_PALETTE = {
+    R:'#7a3b2a', H:'#96503a', t:'#5a3a22', W:'#ead9a8', w:'#cdb883',
+    K:'#8ec3e6', k:'#3d3220', D:'#6b3f26', d:'#3a2418'
+  };
   const SHOP_CHARS = new Set(['a','b','c','d','e','f']);
   function nearAny(chars){
     const tx = tileX(), ty = tileY();
@@ -664,6 +695,8 @@
     if(nearType('5')){ chickenAction(); return; }
     if(state.map==='home' && nearRanch()){ ranchAction(); return; }
     if(nearAny(GATE_CHARS)){ openGate(); return; }
+    if(nearAny(HOUSE_CHARS)){ openSleep(); return; }
+    if(nearAny(SITE_CHARS)){ openSite(); return; }
     if(nearAny(WORK_CHARS)){ openCraft(); return; }
     const tr = findNear('6'), rk = findNear('g');
     if(tr || rk){
@@ -752,6 +785,51 @@
     updateHud();
     document.getElementById('shopInfo').textContent = '牛を買ったよ🐄 店の東の牧場にいるよ。小麦をあげてね';
     save();
+  };
+
+  // ---- Sleeping: only at a house ----
+  function openSleep(){ document.getElementById('sleepModal').classList.add('open'); }
+  document.getElementById('closeSleep').onclick = ()=>document.getElementById('sleepModal').classList.remove('open');
+  document.getElementById('doSleep').onclick = ()=>{
+    document.getElementById('sleepModal').classList.remove('open');
+    sleep();
+  };
+
+  // ---- House construction site (north map) ----
+  const SITE_COST = { gold:2500, wood:50, stone:40, iron:15 };
+  const SITE_ICON = { gold:'💰', wood:'🪵', stone:'🪨', iron:'🔩' };
+  function siteConds(){
+    const lv = Math.max(state.toolLevel, state.axeLevel, state.pickLevel);
+    return [
+      { label:'牛を2頭以上飼う', ok: state.cows.length>=2, now:`${state.cows.length}/2頭` },
+      { label:'いずれかの道具をLv3にする', ok: lv>=3, now:`最高Lv${lv}` },
+      { label:'作物を累計20個収穫する', ok: (state.totalHarvest||0)>=20, now:`${state.totalHarvest||0}/20個` },
+    ];
+  }
+  function siteReady(){
+    return siteConds().every(c=>c.ok) && Object.keys(SITE_COST).every(k=>state[k]>=SITE_COST[k]);
+  }
+  function renderSite(msg){
+    const list = document.getElementById('siteList');
+    list.innerHTML = '';
+    const add = (ok, text)=>{
+      const row = document.createElement('div'); row.className = 'shop-item';
+      const span = document.createElement('span'); span.textContent = (ok?'✅ ':'⬜ ') + text;
+      row.appendChild(span); list.appendChild(row);
+    };
+    for(const c of siteConds()) add(c.ok, `${c.label}(${c.now})`);
+    for(const k of Object.keys(SITE_COST)) add(state[k]>=SITE_COST[k], `${SITE_ICON[k]} ${SITE_COST[k]}${k==='gold'?'G':'個'}を渡す(所持${state[k]})`);
+    document.getElementById('siteInfo').textContent = msg || (siteReady() ? '準備OK!建設できるよ' : 'まだ条件・材料が足りないよ');
+  }
+  function openSite(){ document.getElementById('siteModal').classList.add('open'); renderSite(); }
+  document.getElementById('closeSite').onclick = ()=>document.getElementById('siteModal').classList.remove('open');
+  document.getElementById('buildHouse').onclick = ()=>{
+    if(!siteReady()){ renderSite('まだ条件・材料が足りないよ'); return; }
+    for(const k of Object.keys(SITE_COST)) state[k] -= SITE_COST[k];
+    state.northHouse = true;
+    document.getElementById('siteModal').classList.remove('open');
+    updateHud(); save();
+    setMsg('🏠 家が完成した!家でアクションすると1日を過ごせるよ');
   };
 
   function findNear(ch){
@@ -846,6 +924,7 @@
     } else if(t.growth>=3){
       const crop = t.crop || 'wheat';
       state.harvestedByType[crop] = (state.harvestedByType[crop]||0) + 1;
+      state.totalHarvest = (state.totalHarvest||0) + 1;
       t.planted = false; t.tilled = false; t.growth = 0; t.watered = false; t.crop = null;
       addEffect(wx,wy,'harvest');
       return 'harvest';
@@ -878,6 +957,7 @@
     '畑仕事は順調?',
     'お店で種を買えるよ🏪',
     'たまには休むのも大事だよ',
+    '家でアクションすると、1日を過ごせるよ🛏️',
     'この村、のんびりしてていいでしょ',
     'ニワトリにもエサあげてる?',
     '雨の日は水やりしなくても育つらしいよ'
@@ -888,7 +968,8 @@
     '作業台はここにもあるよ。素材が貯まったら強化してくといい',
     '西の森は木が密集してて、みかんも実りやすいんだ',
     '池のまわりは静かでね、昼寝にちょうどいい',
-    '南の抜け道から村に戻れるよ'
+    '南の抜け道から村に戻れるよ',
+    '南の建設予定地に家が建つらしいよ。材料と条件をそろえてね🏠'
   ];
   function talkNPC(){
     const north = state.map==='north';
@@ -1042,7 +1123,6 @@
     save();
   };
   document.getElementById('closeShop').onclick = closeShop;
-  document.getElementById('btnSleep').onclick = sleep;
   document.getElementById('btnAction').onclick = action;
 
   // Virtual joystick: drag the knob to steer freely, analog-style
@@ -1129,27 +1209,39 @@
     if(t==='0'){
       ctx.fillStyle = GROUND;
       ctx.fillRect(px,py,TILE,TILE);
+    } else if(t==='l'||t==='m'||t==='n'){
+      drawSprite(px, py, t==='m' ? ROOF_MID_TEX : ROOF_TEX, HOUSE2_PALETTE, TILE/16, false);
+    } else if(t==='o'||t==='p'||t==='q'){
+      drawSprite(px, py, t==='p' ? WALL_DOOR : WALL_WINDOW, HOUSE2_PALETTE, TILE/16, false);
+    } else if(t==='r'||t==='R'||t==='x'||t==='s'||t==='S'||t==='y'){
+      ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16, top = (t==='r'||t==='R'||t==='x');
+      const le = (t==='r'||t==='s'), re = (t==='x'||t==='y');
+      if(!top){
+        ctx.fillStyle = '#b9b3a5'; ctx.fillRect(px, py+9*u, TILE, 7*u);
+        ctx.fillStyle = '#9c9689'; ctx.fillRect(px, py+9*u, TILE, 2*u);
+      }
+      ctx.fillStyle = '#8a5a34';
+      if(le) ctx.fillRect(px+1*u, py, 2.5*u, TILE);
+      if(re) ctx.fillRect(px+TILE-3.5*u, py, 2.5*u, TILE);
+      if(top){ ctx.fillRect(px, py+1*u, TILE, 2*u); ctx.fillRect(px, py+TILE-2*u, TILE, 2*u); }
+      if(t==='R'){ ctx.font = Math.round(TILE*0.6)+'px sans-serif'; ctx.fillText('🚧', px+TILE*0.18, py+TILE*0.72); }
+    } else if(t==='j'){
+      ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16;
+      ctx.fillStyle = '#c97b5f';
+      ctx.fillRect(px+1*u, py+3*u, 3*u, 11*u); ctx.fillRect(px+12*u, py+3*u, 3*u, 11*u);
+      ctx.fillStyle = '#8a4a32';
+      ctx.fillRect(px+4*u, py+5*u, 2*u, 8*u);
+      ctx.fillRect(px+4*u, py+6*u, 4*u, 2*u); ctx.fillRect(px+4*u, py+10*u, 4*u, 2*u);
     } else if(t==='G'){
       ctx.fillStyle = '#e8dcae'; ctx.fillRect(px,py,TILE,TILE);
-      const u = TILE/16, left = (wx%2===0);
-      ctx.fillStyle = '#8a5a34';
-      ctx.fillRect(px,py+3*u,TILE,2*u); ctx.fillRect(px,py+9*u,TILE,2*u);
-      for(let i=1;i<6;i++) ctx.fillRect(px+i*TILE/6-u,py+2*u,2*u,11*u);
-      ctx.fillStyle = '#5a3a20'; ctx.fillRect(left?px:px+TILE-3*u, py+1*u, 3*u, 14*u);
-      ctx.fillStyle = '#e0b030'; ctx.fillRect(left?px+TILE-3*u:px, py+6*u, 3*u, 4*u);
     } else if(t==='3'||t==='u'||t==='v'){
       ctx.fillStyle = '#e8dcae';
       ctx.fillRect(px,py,TILE,TILE);
       ctx.fillStyle = 'rgba(0,0,0,0.07)';
       ctx.fillRect(px+3,py+3,TILE-6,TILE-6);
       speckle(px,py,wx,wy,4,'rgba(0,0,0,0.08)',1,2);
-      if(t==='u'||t==='v'){
-        ctx.fillStyle = '#e0a030';
-        ctx.beginPath();
-        if(t==='u'){ ctx.moveTo(px+TILE/2,py+6); ctx.lineTo(px+TILE-7,py+TILE-7); ctx.lineTo(px+7,py+TILE-7); }
-        else { ctx.moveTo(px+TILE/2,py+TILE-6); ctx.lineTo(px+TILE-7,py+7); ctx.lineTo(px+7,py+7); }
-        ctx.fill();
-      }
     } else if(t==='8'){
       ctx.fillStyle = GROUND;
       ctx.fillRect(px,py,TILE,TILE);
@@ -1296,11 +1388,13 @@
     const {camX, camY} = camera();
     const startX = Math.floor(camX), startY = Math.floor(camY);
     const trees = [];
+    const overlays = [];
     for(let wy=startY; wy<=startY+VIEW_ROWS; wy++){
       for(let wx=startX; wx<=startX+VIEW_COLS; wx++){
         const sx = (wx-camX)*TILE, sy = (wy-camY)*TILE;
         const tt = tileAt(wx,wy);
         if(tt==='6'||tt==='9') trees.push([sx,sy,wx,wy,tt]);
+        if(tt==='G'||tt==='u'||tt==='v') overlays.push([sx,sy,wx,tt]);
         drawTile(wx, wy, sx/TILE, sy/TILE);
       }
     }
@@ -1321,6 +1415,24 @@
       }
       const spr = (tt==='6' && state.fruit[K(wx,wy)]) ? TREE_SPRITE : TREE_NOFRUIT;
       drawSprite(sx + TILE/2 - tSize/2 + shake, sy + TILE - tSize, spr, TREE_PALETTE, tScale, false);
+    }
+    // Gate and exit arrows on top of the border trees
+    for(const [ox,oy,owx,ot] of overlays){
+      const u = TILE/16;
+      if(ot==='G'){
+        const left = (owx%2===0);
+        ctx.fillStyle = '#8a5a34';
+        ctx.fillRect(ox,oy+3*u,TILE,2*u); ctx.fillRect(ox,oy+9*u,TILE,2*u);
+        for(let i=1;i<6;i++) ctx.fillRect(ox+i*TILE/6-u,oy+2*u,2*u,11*u);
+        ctx.fillStyle = '#5a3a20'; ctx.fillRect(left?ox:ox+TILE-3*u, oy+1*u, 3*u, 14*u);
+        ctx.fillStyle = '#e0b030'; ctx.fillRect(left?ox+TILE-3*u:ox, oy+6*u, 3*u, 4*u);
+      } else {
+        ctx.fillStyle = '#e0a030';
+        ctx.beginPath();
+        if(ot==='u'){ ctx.moveTo(ox+TILE/2,oy+6); ctx.lineTo(ox+TILE-7,oy+TILE-7); ctx.lineTo(ox+7,oy+TILE-7); }
+        else { ctx.moveTo(ox+TILE/2,oy+TILE-6); ctx.lineTo(ox+TILE-7,oy+7); ctx.lineTo(ox+7,oy+7); }
+        ctx.fill();
+      }
     }
     // Tilling dust effects
     const now = performance.now();
