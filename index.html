@@ -88,6 +88,8 @@
     padding:16px; max-width:340px; width:100%;
   }
   .shop-box h2{ margin-top:0; font-size:1rem; }
+  .shop-box{ max-height:88vh; overflow-y:auto; }
+  .shop-item small{ color:var(--sub); }
   .shop-item{
     display:flex; justify-content:space-between; align-items:center;
     padding:6px 0; border-bottom:1px dashed var(--sub); font-size:0.85rem;
@@ -132,6 +134,10 @@
         <span>📅 <b id="day">1</b> 日目</span>
         <span id="seedInfo">🌾 <b id="seeds">3</b></span>
         <span>🥚 <b id="eggs">0</b></span>
+        <span>🪵 <b id="wood">0</b></span>
+        <span>🍊 <b id="mikan">0</b></span>
+        <span>🪨 <b id="stone">0</b></span>
+        <span>🔩 <b id="iron">0</b></span>
       </div>
       <canvas id="game" width="360" height="280"></canvas>
     </div>
@@ -151,6 +157,15 @@
     </div>
   </div>
 
+  <div class="shop" id="craftModal">
+    <div class="shop-box">
+      <h2>🔨 作業台</h2>
+      <div id="craftList"></div>
+      <p class="sub" id="craftInfo" style="margin-top:8px;"></p>
+      <button class="close-shop" id="closeCraft">閉じる</button>
+    </div>
+  </div>
+
   <div class="shop" id="shopModal">
     <div class="shop-box">
       <h2>🏪 種屋さん</h2>
@@ -167,12 +182,16 @@
         <button data-crop="corn" class="buySeed">買う</button>
       </div>
       <div class="shop-item">
-        <span>収穫物をまとめて売る</span>
+        <span>収穫物・みかんをまとめて売る</span>
         <button id="sellCrop">売る</button>
       </div>
       <div class="shop-item">
         <span>卵を売る (1個 15G)</span>
         <button id="sellEgg">売る</button>
+      </div>
+      <div class="shop-item">
+        <span>素材を1個売る</span>
+        <span><button class="sellMat" data-mat="wood">🪵5G</button> <button class="sellMat" data-mat="stone">🪨8G</button> <button class="sellMat" data-mat="iron">🔩30G</button></span>
       </div>
       <div class="shop-item">
         <span>🪓 鍬を強化 (Lv<span id="toolLv">1</span>/3)</span>
@@ -229,13 +248,29 @@
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
     if(layout[y][x]==='0' && (x*7+y*13)%23===0) layout[y][x]='6'; // scattered trees
   }
+  // Rocks: scattered plus a rocky quarry area
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    if(layout[y][x]==='0' && (x*5+y*11)%19===0) layout[y][x]='g';
+  }
+  for(let y=3;y<=8;y++) for(let x=22;x<=28;x++){
+    if(layout[y][x]==='0' && (x*3+y*7)%3===0) layout[y][x]='g';
+  }
+  layout[7][13]='h'; layout[7][14]='i'; // workbench (2 tiles wide)
+  // Unbreakable border forest (2 tiles thick)
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    if(x<2||y<2||x>=COLS-2||y>=ROWS-2) layout[y][x]='9';
+  }
+  const treeKeys = [];
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(layout[y][x]==='6') treeKeys.push(x+','+y); }
 
-  const SOLID = new Set(['2','4','5','6','7','8','a','b','c','d','e','f']);
+  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','a','b','c','d','e','f']);
 
   let state = {
     px:6, py:5, dir:'down',
     gold:50, day:1, seedsByType:{wheat:3, tomato:0, corn:0}, harvestedByType:{wheat:0, tomato:0, corn:0},
     selectedCrop:'wheat', eggs:0, toolLevel:1,
+    wood:0, mikan:0, treeHits:{}, chopped:{}, fruit:null,
+    stone:0, iron:0, rockHits:{}, mined:{}, axeLevel:1, pickLevel:1,
     chicken:{ fed:false, eggReady:false },
     tiles:{} // "x,y" -> {tilled, planted, growth, watered}
   };
@@ -410,6 +445,15 @@
     "................",
   ];
   const TREE_PALETTE = { L:'#4a8f4a', M:'#3a7a3a', T:'#6b4a2a', A:'#e08030' };
+  const ROCK_SPRITE = makeRows(16,(x,y)=>{
+    const dx=(x-7.5)/7.3, dy=(y-9.5)/5.8, d=dx*dx+dy*dy;
+    if(d>1) return '.';
+    if(dx*0.6+dy*0.8>0.55) return 'D';
+    if(dx+dy<-0.85) return 'H';
+    return 'G';
+  });
+  const ROCK_PALETTE = { G:'#8c9098', H:'#b8bdc6', D:'#666a72' };
+  const TREE_NOFRUIT = TREE_SPRITE.map(r=>r.replace(/A/g,'L'));
 
   // Detailed house/shop sprite (roof, windows, door)
   const HOUSE_SPRITE = [
@@ -474,7 +518,12 @@
   }
   const PLAYER_PALETTE = { H:'#5b3a29', S:'#f2c58a', E:'#2a2118', B:'#e29b3f', P:'#4a3a2a', O:'#2a2118' };
   const NPC_PALETTE    = { H:'#8a4a3a', S:'#f2c58a', E:'#2a2118', B:'#6fa86f', P:'#4a3a2a', O:'#2a2118' };
-  function tileAt(x,y){ return layout[y] ? layout[y][x] : '0'; }
+  function tileAt(x,y){
+    const c = layout[y] ? layout[y][x] : '0';
+    if(c==='6' && state.chopped[x+','+y]!==undefined) return '0';
+    if(c==='g' && state.mined[x+','+y]!==undefined) return '0';
+    return c;
+  }
   function tileX(){ return Math.round(state.px); }
   function tileY(){ return Math.round(state.py); }
   function key(x,y){ return x+','+y; }
@@ -491,6 +540,10 @@
     document.getElementById('seeds').textContent = state.seedsByType[state.selectedCrop];
     document.getElementById('seedInfo').firstChild.textContent = CROPS[state.selectedCrop].emoji + ' ';
     document.getElementById('eggs').textContent = state.eggs;
+    document.getElementById('wood').textContent = state.wood;
+    document.getElementById('mikan').textContent = state.mikan;
+    document.getElementById('stone').textContent = state.stone;
+    document.getElementById('iron').textContent = state.iron;
   }
 
   function collides(px, py){
@@ -517,6 +570,7 @@
     else state.dir = vy>0 ? 'down' : 'up';
   }
 
+  const WORK_CHARS = new Set(['h','i']);
   const SHOP_CHARS = new Set(['a','b','c','d','e','f']);
   function nearAny(chars){
     const tx = tileX(), ty = tileY();
@@ -535,7 +589,83 @@
     if(nearAny(SHOP_CHARS)){ openShop(); return; }
     if(nearType('4')){ talkNPC(); return; }
     if(nearType('5')){ chickenAction(); return; }
+    if(nearAny(WORK_CHARS)){ openCraft(); return; }
+    const tr = findNear('6'), rk = findNear('g');
+    if(tr || rk){
+      if(tr && (!rk || tr[2]<=rk[2])) treeAction(tr); else rockAction(rk);
+      return;
+    }
     setMsg('ここでは何もできないみたい');
+  }
+
+  function findNear(ch){
+    const tx = tileX(), ty = tileY();
+    const fx = state.dir==='left'?-1:state.dir==='right'?1:0;
+    const fy = state.dir==='up'?-1:state.dir==='down'?1:0;
+    const cx = state.px+0.5, cy = state.py+0.5;
+    let best = null, bd = 1e9;
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      const x = tx+dx, y = ty+dy;
+      if(tileAt(x,y)!==ch) continue;
+      const ddx = x+0.5-cx, ddy = y+0.5-cy;
+      const d = Math.hypot(ddx,ddy) - (ddx*fx+ddy*fy)*0.15;
+      if(d<bd){ bd = d; best = [x,y,d]; }
+    }
+    return best;
+  }
+  function treeAction(t){
+    const k = t[0]+','+t[1];
+    if(state.fruit[k]){
+      const n = 1 + Math.floor(Math.random()*3);
+      state.mikan += n; state.fruit[k] = false;
+      addEffect(t[0],t[1],'pick');
+      setMsg(`みかんを${n}個収穫した🍊`);
+    } else {
+      const hits = (state.treeHits[k]||0) + 1;
+      const need = [3,2,1][state.axeLevel-1] || 1;
+      triggerActionAnim('axe');
+      addEffect(t[0],t[1],'chop');
+      if(hits>=need){
+        delete state.treeHits[k]; delete state.fruit[k];
+        state.chopped[k] = state.day;
+        const n = 2 + Math.floor(Math.random()*2) + (state.axeLevel-1);
+        state.wood += n;
+        addEffect(t[0],t[1],'wood');
+        setMsg(`木を切り倒した!木材を${n}個回収🪵`);
+      } else {
+        state.treeHits[k] = hits;
+        setMsg(`斧でコーン!(${hits}/${need})`);
+      }
+    }
+    updateHud(); save();
+  }
+
+  function rockAction(t){
+    const k = t[0]+','+t[1];
+    const need = [5,4,3][state.pickLevel-1] || 3;
+    const hits = (state.rockHits[k]||0) + 1;
+    triggerActionAnim('pick');
+    addEffect(t[0],t[1],'rockchip');
+    if(hits>=need){
+      delete state.rockHits[k];
+      state.mined[k] = state.day;
+      const ironP = [0.25,0.35,0.5][state.pickLevel-1] || 0.5;
+      if(Math.random()<ironP){
+        const n = 1 + (state.pickLevel>=3 ? 1 : 0);
+        state.iron += n;
+        addEffect(t[0],t[1],'drop','#7d8fa8');
+        setMsg(`鉄を${n}個回収🔩`);
+      } else {
+        const n = 2 + Math.floor(Math.random()*2) + (state.pickLevel-1);
+        state.stone += n;
+        addEffect(t[0],t[1],'drop','#a4a8b0');
+        setMsg(`石を${n}個回収🪨`);
+      }
+    } else {
+      state.rockHits[k] = hits;
+      setMsg(`ピッケルでカーン!(${hits}/${need})`);
+    }
+    updateHud(); save();
   }
 
   const OFFSETS_1 = [[0,0]];
@@ -624,13 +754,73 @@
     if(state.chicken.fed){ state.chicken.eggReady = true; }
     state.chicken.fed = false;
     state.day++;
+    for(const k of Object.keys(state.chopped)){
+      const [x,y] = k.split(',').map(Number);
+      const near = Math.abs(state.px-x)<1.3 && Math.abs(state.py-y)<1.3;
+      if(state.day - state.chopped[k] >= 5 && !near) delete state.chopped[k];
+    }
+    for(const k of Object.keys(state.mined)){
+      const [x,y] = k.split(',').map(Number);
+      const near = Math.abs(state.px-x)<1.3 && Math.abs(state.py-y)<1.3;
+      if(state.day - state.mined[k] >= 4 && !near) delete state.mined[k];
+    }
+    for(const k of treeKeys){
+      if(state.chopped[k]===undefined && !state.fruit[k] && Math.random()<0.2) state.fruit[k] = true;
+    }
     setMsg(isRain ? '雨の音…🌧️ 畑は自動で水やりされたよ' : 'おやすみ…🌙 また新しい一日だよ');
     updateHud(); draw(); save();
   }
 
+  const UPG = {
+    hoe:  { name:'鍬', icon:'🌱', key:'toolLevel', costs:[{wood:5,stone:10,iron:2},{wood:10,stone:20,iron:6}], desc:['一度に5マス作業','一度に9マス作業'] },
+    axe:  { name:'斧', icon:'🪓', key:'axeLevel',  costs:[{stone:8,iron:2},{stone:16,iron:6}], desc:['2回で伐採・木材+1','1回で伐採・木材+2'] },
+    pick: { name:'ピッケル', icon:'⛏️', key:'pickLevel', costs:[{wood:8,stone:6,iron:1},{wood:15,stone:14,iron:5}], desc:['4回で採掘・鉄が出やすい','3回で採掘・鉄がさらに出やすい'] },
+  };
+  function costStr(c){ return [c.wood&&`🪵${c.wood}`, c.stone&&`🪨${c.stone}`, c.iron&&`🔩${c.iron}`].filter(Boolean).join(' '); }
+  function renderCraft(msg){
+    const list = document.getElementById('craftList');
+    list.innerHTML = '';
+    for(const id of Object.keys(UPG)){
+      const u = UPG[id], lv = state[u.key];
+      const row = document.createElement('div'); row.className = 'shop-item';
+      const span = document.createElement('span');
+      if(lv>=3){ span.textContent = `${u.icon} ${u.name} Lv3 (最大)`; row.appendChild(span); }
+      else{
+        span.innerHTML = `${u.icon} ${u.name} Lv${lv}→${lv+1}<br><small>${u.desc[lv-1]}<br>${costStr(u.costs[lv-1])}</small>`;
+        const b = document.createElement('button'); b.textContent = '強化';
+        b.onclick = ()=>upgradeTool(id);
+        row.appendChild(span); row.appendChild(b);
+      }
+      list.appendChild(row);
+    }
+    document.getElementById('craftInfo').textContent = msg || `所持: 🪵${state.wood} 🪨${state.stone} 🔩${state.iron}`;
+  }
+  function upgradeTool(id){
+    const u = UPG[id], lv = state[u.key];
+    if(lv>=3) return;
+    const c = u.costs[lv-1];
+    if((c.wood||0)>state.wood || (c.stone||0)>state.stone || (c.iron||0)>state.iron){ renderCraft('素材が足りないよ'); return; }
+    state.wood -= c.wood||0; state.stone -= c.stone||0; state.iron -= c.iron||0;
+    state[u.key]++;
+    updateHud(); save();
+    renderCraft(`${u.name}がLv${state[u.key]}になった!`);
+  }
+  function openCraft(){ document.getElementById('craftModal').classList.add('open'); renderCraft(); }
+  document.getElementById('closeCraft').onclick = ()=>document.getElementById('craftModal').classList.remove('open');
+  document.querySelectorAll('.sellMat').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const m = btn.dataset.mat, price = {wood:5, stone:8, iron:30}[m];
+      if(state[m]<=0){ setMsg('その素材がないよ'); return; }
+      state[m]--; state.gold += price;
+      updateHud();
+      document.getElementById('shopInfo').textContent = `+${price}G / ${inventorySummary()}`;
+      save();
+    });
+  });
+
   function inventorySummary(){
     const cropsStr = Object.keys(CROPS).map(k=>`${CROPS[k].emoji}${state.harvestedByType[k]||0}`).join(' ');
-    return `収穫物: ${cropsStr} / 卵: ${state.eggs}個`;
+    return `収穫物: ${cropsStr} / 🪵${state.wood} 🪨${state.stone} 🔩${state.iron} 🍊${state.mikan} / 卵: ${state.eggs}個`;
   }
 
   function openShop(){
@@ -659,7 +849,8 @@
       const n = state.harvestedByType[k]||0;
       if(n>0){ total += n*CROPS[k].sellPrice; sold.push(`${CROPS[k].emoji}${n}`); state.harvestedByType[k] = 0; }
     }
-    if(total===0){ setMsg('売れる収穫物がないよ'); return; }
+    if(state.mikan>0){ total += state.mikan*12; sold.push(`🍊${state.mikan}`); state.mikan = 0; }
+    if(total===0){ setMsg('売れるものがないよ'); return; }
     state.gold += total;
     updateHud();
     document.getElementById('shopInfo').textContent = `${sold.join(' ')} 売れて+${total}G!`;
@@ -695,9 +886,11 @@
     const knob = document.getElementById('joystickKnob');
     const RADIUS = 50, DEADZONE = 10;
     let dragging = false, center = {x:0,y:0};
+    let downTime = 0, maxDist = 0;
 
     function onDown(e){
       dragging = true;
+      downTime = performance.now(); maxDist = 0;
       const r = stick.getBoundingClientRect();
       center = { x:r.left + r.width/2, y:r.top + r.height/2 };
       stick.setPointerCapture && e.pointerId!=null && stick.setPointerCapture(e.pointerId);
@@ -707,6 +900,7 @@
       if(!dragging) return;
       const dx = e.clientX - center.x, dy = e.clientY - center.y;
       const dist = Math.hypot(dx,dy);
+      if(dist > maxDist) maxDist = dist;
       const clamped = Math.min(dist, RADIUS);
       const ang = Math.atan2(dy,dx);
       const kx = Math.cos(ang)*clamped, ky = Math.sin(ang)*clamped;
@@ -715,8 +909,11 @@
       else{ stickVec.x = (kx/RADIUS); stickVec.y = (ky/RADIUS); }
     }
     function onUp(){
+      if(!dragging) return;
       dragging = false; stickVec.x = 0; stickVec.y = 0;
       knob.style.transform = 'translate(-50%,-50%)';
+      // Quick tap without dragging = action
+      if(performance.now() - downTime < 300 && maxDist < 14){ action(); }
     }
     stick.addEventListener('pointerdown', onDown);
     window.addEventListener('pointermove', onMove);
@@ -777,7 +974,35 @@
       ctx.fillRect(px+3,py+TILE/2-7,TILE-6,6);
       ctx.fillStyle = '#c97b5f';
       ctx.fillRect(px+TILE/2-3,py+4,6,TILE-8);
-    } else if(t==='6'){
+    } else if(t==='g'){
+      ctx.fillStyle = '#a9c96e';
+      ctx.fillRect(px,py,TILE,TILE);
+      let shake = 0;
+      for(const e of effects){
+        if(e.type==='rockchip' && e.wx===wx && e.wy===wy){
+          const a = (performance.now()-e.start)/600;
+          if(a<0.5) shake = -Math.abs(Math.sin(a*60))*(1-a*2)*2.5;
+        }
+      }
+      drawSprite(px+shake, py, ROCK_SPRITE, ROCK_PALETTE, TILE/16, false);
+    } else if(t==='h'||t==='i'){
+      ctx.fillStyle = '#a9c96e';
+      ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16, L = t==='h', x0 = L ? px+1*u : px, w = L ? 15*u : 15*u;
+      ctx.fillStyle = '#c58a52'; ctx.fillRect(x0, py+6*u, w, 3*u);
+      ctx.fillStyle = '#8a5a34'; ctx.fillRect(x0, py+9*u, w, 2*u);
+      ctx.fillStyle = '#6b4a2a';
+      ctx.fillRect(L ? px+2*u : px+12*u, py+11*u, 2*u, 4*u);
+      if(L){
+        ctx.fillRect(px+7*u, py+11*u, 2*u, 4*u);
+        ctx.fillStyle = '#6b4a2a'; ctx.fillRect(px+6*u, py+3*u, 2*u, 4*u);
+        ctx.fillStyle = '#9a9a9a'; ctx.fillRect(px+4*u, py+2*u, 6*u, 2.5*u);
+      } else {
+        ctx.fillStyle = '#5a5f68'; ctx.fillRect(px+4*u, py+4*u, 7*u, 2*u);
+        ctx.fillRect(px+6*u, py+3*u, 3*u, 1*u);
+        ctx.fillStyle = '#b8bcc4'; ctx.fillRect(px+3*u, py+4*u, 2*u, 1*u);
+      }
+    } else if(t==='6'||t==='9'){
       ctx.fillStyle = '#a9c96e';
       ctx.fillRect(px,py,TILE,TILE);
     } else if(t==='7'){
@@ -835,7 +1060,7 @@
   }
 
   let actionAnim = null;
-  function triggerActionAnim(){ actionAnim = { start: performance.now() }; }
+  function triggerActionAnim(tool){ actionAnim = { start: performance.now(), tool: tool||'hoe' }; }
 
   function drawPlayer(camX, camY){
     const px = (state.px-camX)*TILE, py = (state.py-camY)*TILE;
@@ -864,15 +1089,22 @@
         ctx.rotate(swing*Math.PI/180*sign);
         ctx.fillStyle = '#6b4a2a';
         ctx.fillRect(-2, -3, 4, 20);
-        ctx.fillStyle = '#9a9a9a';
-        ctx.fillRect(-7, 15, 14, 6);
+        if(actionAnim.tool==='axe'){
+          ctx.fillStyle = '#b8bcc4'; ctx.fillRect(-1, 11, 9, 8);
+          ctx.fillStyle = '#e6e9ee'; ctx.fillRect(6, 11, 3, 8);
+        } else if(actionAnim.tool==='pick'){
+          ctx.fillStyle = '#9a9a9a'; ctx.fillRect(-9, 11, 18, 3);
+          ctx.fillRect(-9, 11, 3, 7); ctx.fillRect(6, 11, 3, 7);
+        } else {
+          ctx.fillStyle = '#9a9a9a'; ctx.fillRect(-7, 15, 14, 6);
+        }
         ctx.restore();
       }
     }
   }
 
   let effects = [];
-  function addEffect(wx,wy,type){ effects.push({wx,wy,type,start:performance.now()}); }
+  function addEffect(wx,wy,type,color){ effects.push({wx,wy,type,color,start:performance.now()}); }
 
   function draw(){
     const {camX, camY} = camera();
@@ -881,15 +1113,25 @@
     for(let wy=startY; wy<=startY+VIEW_ROWS; wy++){
       for(let wx=startX; wx<=startX+VIEW_COLS; wx++){
         const sx = (wx-camX)*TILE, sy = (wy-camY)*TILE;
-        if(tileAt(wx,wy)==='6') trees.push([sx,sy]);
+        const tt = tileAt(wx,wy);
+        if(tt==='6'||tt==='9') trees.push([sx,sy,wx,wy,tt]);
         drawTile(wx, wy, sx/TILE, sy/TILE);
       }
     }
     // Trees drawn bigger than their tile, overflowing into neighbors, on top of the base grid
     const tScale = (TILE/16)*2.6;
     const tSize = 16*tScale;
-    for(const [sx,sy] of trees){
-      drawSprite(sx + TILE/2 - tSize/2, sy + TILE - tSize, TREE_SPRITE, TREE_PALETTE, tScale, false);
+    const nowT = performance.now();
+    for(const [sx,sy,wx,wy,tt] of trees){
+      let shake = 0;
+      for(const e of effects){
+        if(e.type==='chop' && e.wx===wx && e.wy===wy){
+          const a = (nowT-e.start)/600;
+          if(a<0.5) shake = Math.sin(a*60)*(1-a*2)*3;
+        }
+      }
+      const spr = (tt==='6' && state.fruit[wx+','+wy]) ? TREE_SPRITE : TREE_NOFRUIT;
+      drawSprite(sx + TILE/2 - tSize/2 + shake, sy + TILE - tSize, spr, TREE_PALETTE, tScale, false);
     }
     // Tilling dust effects
     const now = performance.now();
@@ -897,8 +1139,24 @@
     for(const e of effects){
       const age = (now - e.start)/600;
       const ex = (e.wx - camX + 0.5)*TILE, ey = (e.wy - camY + 0.5)*TILE;
+      if(e.type==='wood'||e.type==='drop'){
+        const tx = (state.px+0.5-camX)*TILE, ty = (state.py+0.5-camY)*TILE;
+        const p = Math.min(1, age*1.2);
+        for(let i=0;i<3;i++){
+          const x = ex + (tx-ex)*p + (i-1)*8*(1-p);
+          const y = ey - 8 + (ty-ey+8)*p - Math.sin(p*Math.PI)*22;
+          if(e.type==='drop'){
+            ctx.fillStyle = e.color; ctx.fillRect(x-4, y-4, 8, 8);
+            ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillRect(x-4, y-4, 8, 3);
+          } else {
+            ctx.fillStyle = '#8a5a34'; ctx.fillRect(x-6, y-2.5, 12, 5);
+            ctx.fillStyle = '#c9955f'; ctx.fillRect(x-6, y-2.5, 3, 5);
+          }
+        }
+        continue;
+      }
       ctx.globalAlpha = Math.max(0, 1 - age*1.1);
-      ctx.fillStyle = e.type==='water' ? '#6ea8d8' : e.type==='plant' ? '#5fa85f' : '#6b3f26';
+      ctx.fillStyle = e.type==='water' ? '#6ea8d8' : e.type==='plant' ? '#5fa85f' : e.type==='chop' ? '#c9955f' : e.type==='rockchip' ? '#9aa0a8' : e.type==='pick' ? '#e08030' : '#6b3f26';
       for(let i=0;i<6;i++){
         const ang = (i/6)*Math.PI*2 + age*2.5;
         const dist = age*16;
@@ -912,6 +1170,7 @@
   }
 
   load();
+  if(!state.fruit){ state.fruit = {}; for(const k of treeKeys) state.fruit[k] = Math.random()<0.25; }
   updateHud();
 
   let lastT = null;
