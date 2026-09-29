@@ -132,6 +132,7 @@
         <span>🐟 <b id="fish">0</b></span>
         <span>🥇 <b id="goldore">0</b></span>
         <span>🧶 <b id="wool">0</b></span>
+        <span>🍄 <b id="mushroom">0</b></span>
       </div>
       <canvas id="game" width="360" height="280"></canvas>
     </div>
@@ -199,6 +200,18 @@
     </div>
   </div>
 
+  <div class="shop" id="fishShopModal">
+    <div class="shop-box">
+      <h2>🎣 釣具屋さん</h2>
+      <p class="sub">魚は村の店より3割高く買い取るよ!きのこも買い取ります。</p>
+      <div class="shop-item"><span>🐟 魚を全部売る<br><small id="fs_fish"></small></span><button id="fsSellFish">売る</button></div>
+      <div class="shop-item"><span>🍄 きのこを全部売る<br><small id="fs_mush"></small></span><button id="fsSellMush">売る</button></div>
+      <div class="shop-item"><span>🎣 釣竿を強化<br><small id="fs_rod"></small><br><small>レア魚が釣れやすく、引きの猶予も長くなる</small></span><button id="fsUpgradeRod">強化</button></div>
+      <p class="sub" id="fishShopInfo" style="margin-top:8px;"></p>
+      <button class="close-shop" id="closeFishShop">閉じる</button>
+    </div>
+  </div>
+
   <div class="shop" id="storageModal">
     <div class="shop-box">
       <h2>📦 収納</h2>
@@ -226,7 +239,7 @@
         <button data-crop="corn" class="buySeed">買う</button>
       </div>
       <div class="shop-item">
-        <span>収穫物・みかん・牛乳・魚・羊毛をまとめて売る</span>
+        <span>収穫物・みかん・牛乳・魚・羊毛・きのこをまとめて売る</span>
         <button id="sellCrop">売る</button>
       </div>
       <div class="shop-item">
@@ -410,35 +423,59 @@
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(NORTH[y][x]==='6') treeKeysN.push('n:'+x+','+y); }
   let curLayout = HOME;
 
-  // ===== River area (several rivers, bridges, a fishing pier) =====
+  // ===== River area (big: rivers, bridges, two piers, a tackle shop, chests, mushrooms) =====
+  const RCOLS = 48, RROWS = 34;
   const RIVER = [];
-  for(let y=0;y<ROWS;y++){ const row=[]; for(let x=0;x<COLS;x++) row.push('0'); RIVER.push(row); }
+  for(let y=0;y<RROWS;y++){ const row=[]; for(let x=0;x<RCOLS;x++) row.push('0'); RIVER.push(row); }
   function rfr(x0,y0,x1,y1,ch){ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){ if(RIVER[y] && RIVER[y][x]!==undefined) RIVER[y][x]=ch; } }
-  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+  const rput = (x,y,ch)=>{ RIVER[y][x] = ch; };
+  for(let y=0;y<RROWS;y++) for(let x=0;x<RCOLS;x++){
     if((x*7+y*13)%9===0) RIVER[y][x]='6';
     else if((x*5+y*11)%23===0) RIVER[y][x]='g';
+    else if((x*11+y*3)%13===0) RIVER[y][x]='P';                 // wild mushrooms
   }
-  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
-    if(x<2||y<2||x>=COLS-2||y>=ROWS-2) RIVER[y][x]='9';
+  for(let y=0;y<RROWS;y++) for(let x=0;x<RCOLS;x++){
+    if(x<2||y<2||x>=RCOLS-2||y>=RROWS-2) RIVER[y][x]='9';
   }
-  rfr(10,2,11,21,'7');    // river A (north-south)
-  rfr(12,11,29,12,'7');   // river B (east-west)
-  rfr(24,13,25,21,'7');   // river C (north-south)
-  rfr(13,15,21,20,'7');   // lake
-  rfr(3,1,4,18,'3'); rfr(5,17,9,18,'3'); rfr(12,13,12,18,'3'); rfr(12,13,17,14,'3');
-  rfr(5,6,9,7,'3'); rfr(12,6,17,7,'3'); rfr(16,8,17,10,'3');
-  rfr(10,6,11,7,'B');     // bridge over river A
-  rfr(10,17,11,18,'B');   // second bridge over river A
-  rfr(16,11,17,12,'C');   // bridge over river B
-  rfr(24,17,25,18,'B');   // bridge over river C
-  rfr(17,15,17,18,'F');   // fishing pier (the only place you can fish)
-  RIVER[13][19]='4';      // fisherman NPC
+  rfr(12,2,13,31,'7');    // river A (north-south)
+  rfr(14,13,45,14,'7');   // river B (east-west)
+  rfr(30,15,31,31,'7');   // river C (north-south)
+  rfr(16,19,27,28,'7');   // lake 1 (west pier)
+  rfr(36,19,44,27,'7');   // lake 2 (east pier, rarer fish)
+  rfr(36,3,42,7,'7');     // north-east pond
+  rfr(6,25,9,29,'7');     // south-west pond
+  rfr(3,1,4,10,'3');      // road from the gate
+  rfr(3,9,11,10,'3');     // to bridge A1
+  rfr(3,10,4,30,'3');     // west road going south
+  rfr(3,22,11,23,'3');    // to bridge A2
+  rfr(14,9,45,10,'3');    // main road east
+  rfr(20,11,21,18,'3');   // road to the west pier
+  rfr(34,11,35,18,'3');   // road south over bridge C2
+  rfr(14,22,15,30,'3');   // riverside road
+  rfr(14,29,44,30,'3');   // southern road
+  rfr(34,15,35,30,'3');   // eastern road
+  rfr(34,17,41,18,'3');   // road to the east pier
+  rfr(12,9,13,10,'B');    // bridge A1
+  rfr(12,22,13,23,'B');   // bridge A2
+  rfr(20,13,21,14,'C');   // bridge C1
+  rfr(34,13,35,14,'C');   // bridge C2
+  rfr(30,29,31,30,'B');   // bridge over river C
+  rfr(21,19,21,23,'F');   // west fishing pier
+  rfr(40,19,40,24,'F');   // east fishing pier
+  rfr(38,25,42,26,'0');   // small island at the end of the east pier
+  rput(6,13,'a'); rput(7,13,'b'); rput(8,13,'c');   // tackle shop: roof
+  rput(6,14,'d'); rput(7,14,'e'); rput(8,14,'f');   // tackle shop: walls + door
+  rput(23,17,'4'); rput(43,17,'4'); rput(6,16,'4'); rput(28,6,'4');   // villagers
+  rput(44,5,'Y'); rput(40,26,'Y'); rput(5,30,'Y'); rput(30,4,'Y');   // treasure chests
   RIVER[0][3]='V'; RIVER[0][4]='V';
-  clearAround(RIVER,19,13,19,13,2);
-  clearAround(RIVER,17,14,17,14,2);
+  clearAround(RIVER,6,13,8,14,3);
+  for(const [nx,ny] of [[23,17],[43,17],[6,16],[28,6]]) clearAround(RIVER,nx,ny,nx,ny,2);
+  for(const [cx,cy] of [[44,5],[40,26],[5,30],[30,4]]) clearAround(RIVER,cx,cy,cx,cy,1);
   clearAround(RIVER,3,2,4,2,2);
+  const FISH_SPOTS = [[21,19],[40,19]];   // pier entrances (the rod marker is drawn here)
   const treeKeysR = [];
-  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(RIVER[y][x]==='6') treeKeysR.push('r:'+x+','+y); }
+  for(let y=0;y<RROWS;y++) for(let x=0;x<RCOLS;x++){ if(RIVER[y][x]==='6') treeKeysR.push('r:'+x+','+y); }
+
   // ===== Cave area: a winding maze of narrow passages =====
   const CAVE_STAIRS = {};
   const CAVE = [];
@@ -574,9 +611,13 @@
     }
   })();
   const MAP_LAYOUTS = { home:HOME, north:NORTH, river:RIVER, cave:CAVE, dungeon:DUNGEON };
-  function setMapSize(name){ if(name==='dungeon'){ COLS = DCOLS; ROWS = DROWS; } else { COLS = 32; ROWS = 24; } }
+  function setMapSize(name){
+    if(name==='dungeon'){ COLS = DCOLS; ROWS = DROWS; }
+    else if(name==='river'){ COLS = RCOLS; ROWS = RROWS; }
+    else { COLS = 32; ROWS = 24; }
+  }
 
-  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A','D']);
+  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A','D','Y','W']);
 
   let state = {
     px:6, py:5, dir:'down',
@@ -584,7 +625,7 @@
     selectedCrop:'wheat', eggs:0, toolLevel:1,
     wood:0, mikan:0, treeHits:{}, chopped:{}, fruit:null,
     stone:0, iron:0, goldOre:0, rockHits:{}, mined:{}, axeLevel:1, pickLevel:1, map:'home',
-    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, sword:false, hp:10, stairsOpen:false, dayTime:0, chest:{counts:{}}, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
+    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, sword:false, mushroom:0, rodLevel:1, opened:{}, hp:10, stairsOpen:false, dayTime:0, chest:{counts:{}}, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
     fish:{ minnow:0, ayu:0, carp:0, yamame:0, catfish:0 },
     chicken:{ fed:false, eggReady:false },
     tiles:{} // "x,y" -> {tilled, planted, growth, watered}
@@ -887,7 +928,8 @@
   function tileAt(x,y){
     const c = curLayout[y] ? curLayout[y][x] : '0';
     if(c==='6' && state.chopped[K(x,y)]!==undefined) return '0';
-    if((c==='g'||c==='A') && state.mined[K(x,y)]!==undefined) return '0';
+    if((c==='g'||c==='A'||c==='P') && state.mined[K(x,y)]!==undefined) return '0';
+    if(c==='Y' && state.opened && state.opened[K(x,y)]!==undefined) return 'W';
     if(c==='G' && state.gateOpen) return '3';
     if(c==='Z' && state.gate2Open) return '3';
     if(c==='T' && state.gate3Open) return '3';
@@ -920,6 +962,7 @@
     document.getElementById('fish').textContent = fishCount();
     document.getElementById('goldore').textContent = state.goldOre||0;
     document.getElementById('wool').textContent = state.wool||0;
+    document.getElementById('mushroom').textContent = state.mushroom||0;
   }
 
   function collides(px, py){
@@ -972,7 +1015,7 @@
     const cur = tileAt(tileX(), tileY());
     if(cur==='1'){ farmAction(); return; }
     if(cur==='F'){ fishAction(); return; }
-    if(nearAny(SHOP_CHARS)){ if(state.map==='north') openNorthShop(); else openShop(); return; }
+    if(nearAny(SHOP_CHARS)){ if(state.map==='north') openNorthShop(); else if(state.map==='river') openFishShop(); else openShop(); return; }
     if(nearType('4')){ talkNPC(); return; }
     if(nearType('5')){ chickenAction(); return; }
     if(state.map==='home' && nearRanch()){ ranchAction(); return; }
@@ -981,8 +1024,8 @@
     if(nearAny(HOUSE_CHARS)){ openSleep(); return; }
     if(nearAny(SITE_CHARS)){ openSite(); return; }
     if(nearAny(WORK_CHARS)){ openCraft(); return; }
-    const tr = findNear('6'), rk = findNear('g'), ga = findNear('A');
-    const cands = [[tr,treeAction],[rk,rockAction],[ga,goldAction]].filter(c=>c[0]);
+    const tr = findNear('6'), rk = findNear('g'), ga = findNear('A'), ch = findNear('Y'), mu = findNear('P');
+    const cands = [[tr,treeAction],[rk,rockAction],[ga,goldAction],[ch,chestAction],[mu,mushroomAction]].filter(c=>c[0]);
     if(cands.length){
       cands.sort((a,b)=>a[0][2]-b[0][2]);
       cands[0][1](cands[0][0]);
@@ -1163,13 +1206,51 @@
     sleep();
   };
 
+  // ---- River tackle shop ----
+  const FISH_MULT = 1.3, MUSH_PRICE = 25, ROD_COST = [600, 1800];
+  const fishPrice = k=>Math.round(FISH[k].price*FISH_MULT);
+  function renderFishShop(msg){
+    let ft = 0, fc = 0;
+    for(const k of Object.keys(FISH)){ const n = state.fish[k]||0; fc += n; ft += n*fishPrice(k); }
+    document.getElementById('fs_fish').textContent = `${fc}匹 → ${ft}G`;
+    const mu = state.mushroom||0;
+    document.getElementById('fs_mush').textContent = `${mu}個 → ${mu*MUSH_PRICE}G`;
+    const lv = state.rodLevel||1;
+    document.getElementById('fs_rod').textContent = lv>=3 ? 'Lv3 (最大)' : `Lv${lv}→Lv${lv+1}: ${ROD_COST[lv-1]}G`;
+    document.getElementById('fsUpgradeRod').style.display = lv>=3 ? 'none' : '';
+    document.getElementById('fishShopInfo').textContent = msg || `所持金: ${state.gold}G`;
+  }
+  function openFishShop(){ document.getElementById('fishShopModal').classList.add('open'); renderFishShop(); }
+  document.getElementById('closeFishShop').onclick = ()=>document.getElementById('fishShopModal').classList.remove('open');
+  document.getElementById('fsSellFish').onclick = ()=>{
+    let total = 0, n = 0;
+    for(const k of Object.keys(FISH)){ const c = state.fish[k]||0; total += c*fishPrice(k); n += c; state.fish[k] = 0; }
+    if(!total){ renderFishShop('売れる魚がないよ'); return; }
+    state.gold += total; updateHud(); save();
+    renderFishShop(`魚${n}匹が売れて+${total}G!`);
+  };
+  document.getElementById('fsSellMush').onclick = ()=>{
+    const n = state.mushroom||0;
+    if(n<=0){ renderFishShop('売れるきのこがないよ'); return; }
+    state.gold += n*MUSH_PRICE; state.mushroom = 0; updateHud(); save();
+    renderFishShop(`きのこ${n}個が売れて+${n*MUSH_PRICE}G!`);
+  };
+  document.getElementById('fsUpgradeRod').onclick = ()=>{
+    const lv = state.rodLevel||1;
+    if(lv>=3) return;
+    const cost = ROD_COST[lv-1];
+    if(state.gold<cost){ renderFishShop(`お金が足りないよ(${cost}G必要)`); return; }
+    state.gold -= cost; state.rodLevel = lv+1; updateHud(); save();
+    renderFishShop(`釣竿がLv${state.rodLevel}になった!`);
+  };
+
   // ---- Storage at home (deposit / withdraw) ----
   const STORE_ITEMS = [
     { id:'gold', icon:'💰', label:'お金', unit:100 },
     { id:'eggs', icon:'🥚', label:'卵' }, { id:'wood', icon:'🪵', label:'木材' },
     { id:'stone', icon:'🪨', label:'石' }, { id:'iron', icon:'🔩', label:'鉄' },
     { id:'goldOre', icon:'🥇', label:'金鉱石' }, { id:'mikan', icon:'🍊', label:'みかん' },
-    { id:'milk', icon:'🥛', label:'牛乳' }, { id:'wool', icon:'🧶', label:'羊毛' },
+    { id:'milk', icon:'🥛', label:'牛乳' }, { id:'wool', icon:'🧶', label:'羊毛' }, { id:'mushroom', icon:'🍄', label:'きのこ' },
     { id:'crop:wheat', icon:'🌾', label:'小麦' }, { id:'crop:tomato', icon:'🍅', label:'トマト' },
     { id:'crop:corn', icon:'🌽', label:'とうもろこし' },
     { id:'fish:minnow', icon:'🐟', label:'小魚' }, { id:'fish:ayu', icon:'🐟', label:'アユ' },
@@ -1290,15 +1371,18 @@
   }
   function pickFish(){
     const keys = Object.keys(FISH);
-    let r = Math.random()*keys.reduce((a,k)=>a+FISH[k].w,0);
-    for(const k of keys){ r -= FISH[k].w; if(r<=0) return k; }
+    const lv = state.rodLevel||1, east = state.map==='river' && state.px>=32;   // the east lake has rarer fish
+    const mul = { carp: east?1.2:1, yamame:(1+0.6*(lv-1))*(east?1.5:1), catfish:(1+1.0*(lv-1))*(east?1.6:1) };
+    const w = k=>FISH[k].w*(mul[k]||1);
+    let r = Math.random()*keys.reduce((a,k)=>a+w(k),0);
+    for(const k of keys){ r -= w(k); if(r<=0) return k; }
     return keys[0];
   }
   function fishAction(){
     if(fishing.phase==='idle'){
       const tg = fishTarget();
       if(!tg){ setMsg('水面が近くにないよ'); return; }
-      fishing.phase = 'wait'; fishing.t = 1.5 + Math.random()*3; fishing.bx = tg[0]; fishing.by = tg[1];
+      fishing.phase = 'wait'; fishing.t = Math.max(0.8, 1.5 - 0.3*((state.rodLevel||1)-1) + Math.random()*3); fishing.bx = tg[0]; fishing.by = tg[1];
       setMsg('釣り糸をたらした…🎣 「❗」が出たらアクション!');
     } else if(fishing.phase==='wait'){
       fishing.phase = 'idle';
@@ -1317,7 +1401,7 @@
     if(tileAt(tileX(),tileY())!=='F'){ fishing.phase = 'idle'; return; }
     fishing.t -= dt;
     if(fishing.t<=0){
-      if(fishing.phase==='wait'){ fishing.phase = 'bite'; fishing.t = 1.1; setMsg('❗ 引いてる!今すぐアクション!'); }
+      if(fishing.phase==='wait'){ fishing.phase = 'bite'; fishing.t = 1.1 + 0.25*((state.rodLevel||1)-1); setMsg('❗ 引いてる!今すぐアクション!'); }
       else { fishing.phase = 'idle'; setMsg('逃げられた…'); }
     }
   }
@@ -1341,16 +1425,19 @@
   function drawFishingSpot(camX, camY){
     if(state.map !== 'river') return;
     const u = TILE/16;
-    const px = (17-camX)*TILE, py = (15-camY)*TILE; // pier entrance tile
-    ctx.lineWidth = 2; ctx.strokeStyle = '#6b4a2a';
-    ctx.beginPath(); ctx.moveTo(px+13*u, py+15*u); ctx.lineTo(px+21*u, py+2*u); ctx.stroke();
-    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-    ctx.beginPath(); ctx.moveTo(px+21*u, py+2*u); ctx.lineTo(px+21*u, py+9*u); ctx.stroke();
-    ctx.fillStyle = '#e04a3a';
-    ctx.beginPath(); ctx.arc(px+21*u, py+9*u, 2.5, 0, Math.PI*2); ctx.fill();
-    const bob = Math.sin(performance.now()/350) * 3;
-    ctx.font = Math.round(TILE*0.8) + 'px sans-serif';
-    ctx.fillText('🎣', px + TILE*0.1, py - TILE*0.3 + bob);
+    for(const [tx,ty] of FISH_SPOTS){
+      const px = (tx-camX)*TILE, py = (ty-camY)*TILE; // pier entrance tile
+      if(px<-TILE*2 || py<-TILE*2 || px>VIEW_COLS*TILE+TILE || py>VIEW_ROWS*TILE+TILE) continue;
+      ctx.lineWidth = 2; ctx.strokeStyle = '#6b4a2a';
+      ctx.beginPath(); ctx.moveTo(px+13*u, py+15*u); ctx.lineTo(px+21*u, py+2*u); ctx.stroke();
+      ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath(); ctx.moveTo(px+21*u, py+2*u); ctx.lineTo(px+21*u, py+9*u); ctx.stroke();
+      ctx.fillStyle = '#e04a3a';
+      ctx.beginPath(); ctx.arc(px+21*u, py+9*u, 2.5, 0, Math.PI*2); ctx.fill();
+      const bob = Math.sin(performance.now()/350) * 3;
+      ctx.font = Math.round(TILE*0.8) + 'px sans-serif';
+      ctx.fillText('🎣', px + TILE*0.1, py - TILE*0.3 + bob);
+    }
   }
 
   // ---- Map name label (HTML, under the instructions) ----
@@ -1414,7 +1501,7 @@
   }
   function playerDied(){
     state.gold = 0;
-    for(const k of ['eggs','wood','mikan','stone','iron','milk','goldOre','wool']) state[k] = 0;
+    for(const k of ['eggs','wood','mikan','stone','iron','milk','goldOre','wool','mushroom']) state[k] = 0;
     for(const k of Object.keys(state.harvestedByType)) state.harvestedByType[k] = 0;
     for(const k of Object.keys(state.fish)) state.fish[k] = 0;
     state.hp = 10; invuln = 0;
@@ -1624,6 +1711,30 @@
     updateHud(); save();
   }
 
+  // Wild mushrooms: pick by hand, they grow back
+  function mushroomAction(t){
+    const k = K(t[0],t[1]);
+    const n = 1 + Math.floor(Math.random()*2);
+    state.mushroom = (state.mushroom||0) + n;
+    state.mined[k] = state.day;
+    addEffect(t[0],t[1],'pick');
+    setMsg(`きのこを${n}個採った🍄`);
+    updateHud(); save();
+  }
+  // Treasure chests: open once, refill after 14 days
+  function chestAction(t){
+    const k = K(t[0],t[1]);
+    state.opened = state.opened || {};
+    state.opened[k] = state.day;
+    addEffect(t[0],t[1],'pick');
+    const r = Math.random();
+    if(r<0.45){ const n = 150 + Math.floor(Math.random()*301); state.gold += n; setMsg(`宝箱を開けた!${n}G見つけた💰`); }
+    else if(r<0.7){ const n = 3 + Math.floor(Math.random()*4); state.iron += n; setMsg(`宝箱を開けた!鉄を${n}個見つけた🔩`); }
+    else if(r<0.85){ const w = 8 + Math.floor(Math.random()*8), st = 8 + Math.floor(Math.random()*8); state.wood += w; state.stone += st; setMsg(`宝箱を開けた!木材${w}・石${st}を見つけた`); }
+    else { const n = 1 + Math.floor(Math.random()*2); state.goldOre = (state.goldOre||0) + n; setMsg(`宝箱を開けた!金鉱石を${n}個見つけた🥇`); }
+    updateHud(); save();
+  }
+
   const OFFSETS_1 = [[0,0]];
   const OFFSETS_PLUS = [[0,0],[1,0],[-1,0],[0,1],[0,-1]];
   const OFFSETS_3x3 = [[0,0],[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
@@ -1687,7 +1798,12 @@
     '牛の牧場の南に羊の牧場があるよ。羊のエサはトマトなんだ🍅'
   ];
   const riverLines = [
-    '釣りは南東の湖の桟橋でしかできないんだ🎣',
+    '釣りは西と東、ふたつの桟橋でできるよ🎣',
+    '東の湖の魚はレアなのが多いんだ。竿を強化するともっと釣れるよ',
+    '西の釣具屋は魚を高く買ってくれるよ。きのこも買い取りだ🍄',
+    '森にはきのこが生えてるよ。採っても、しばらくするとまた生える',
+    '東の湖の桟橋の先の小島に、宝箱があるらしいよ',
+    '宝箱は森の奥にも隠れてる。開けても、二週間たつとまた中身が入るんだって',
     '糸をたらして、「❗」が出たらすぐアクションだよ',
     'いくつも橋を渡った先にいい釣り場があるよ',
     '大ナマズは滅多に釣れない。釣れたら大金だ',
@@ -1749,6 +1865,7 @@
       const isGold = MAP_LAYOUTS[pk.map] && MAP_LAYOUTS[pk.map][y] && MAP_LAYOUTS[pk.map][y][x]==='A';
       if(state.day - state.mined[k] >= (isGold ? 7 : 4) && !near) delete state.mined[k];
     }
+    for(const k of Object.keys(state.opened||{})){ if(state.day - state.opened[k] >= 14) delete state.opened[k]; }
     for(const k of treeKeys.concat(treeKeysN, treeKeysR)){
       if(state.chopped[k]===undefined && !state.fruit[k] && Math.random()<0.2) state.fruit[k] = true;
     }
@@ -1855,7 +1972,7 @@
 
   function inventorySummary(){
     const cropsStr = Object.keys(CROPS).map(k=>`${CROPS[k].emoji}${state.harvestedByType[k]||0}`).join(' ');
-    return `収穫物: ${cropsStr} / 🪵${state.wood} 🪨${state.stone} 🔩${state.iron} 🥇${state.goldOre||0} 🍊${state.mikan} 🥛${state.milk} 🧶${state.wool||0} 🐟${fishCount()} / 卵: ${state.eggs}個`;
+    return `収穫物: ${cropsStr} / 🪵${state.wood} 🪨${state.stone} 🔩${state.iron} 🥇${state.goldOre||0} 🍊${state.mikan} 🥛${state.milk} 🧶${state.wool||0} 🍄${state.mushroom||0} 🐟${fishCount()} / 卵: ${state.eggs}個`;
   }
 
   function openShop(){
@@ -1887,6 +2004,7 @@
     if(state.mikan>0){ total += state.mikan*12; sold.push(`🍊${state.mikan}`); state.mikan = 0; }
     if(state.milk>0){ total += state.milk*30; sold.push(`🥛${state.milk}`); state.milk = 0; }
     if((state.wool||0)>0){ total += state.wool*45; sold.push(`🧶${state.wool}`); state.wool = 0; }
+    if((state.mushroom||0)>0){ total += state.mushroom*25; sold.push(`🍄${state.mushroom}`); state.mushroom = 0; }
     for(const k of Object.keys(FISH)){
       const n = state.fish[k]||0;
       if(n>0){ total += n*FISH[k].price; sold.push(`${FISH[k].emoji}${n}`); state.fish[k] = 0; }
@@ -2016,6 +2134,14 @@
     if(t==='0'){
       ctx.fillStyle = GROUND;
       ctx.fillRect(px,py,TILE,TILE);
+      if(state.map==='river'){                       // little wild flowers
+        const h = ((wx*73856093) ^ (wy*19349663)) >>> 0;
+        if(h%7===0){
+          const cols = ['#ffffff','#ffd84a','#ff9ec4'], fx = px + 4 + (h>>4)%(TILE-9), fy = py + 4 + (h>>9)%(TILE-9);
+          ctx.fillStyle = cols[(h>>3)%3]; ctx.fillRect(fx, fy, 3, 3); ctx.fillRect(fx-1, fy+1, 5, 1);
+          ctx.fillStyle = '#e0a020'; ctx.fillRect(fx+1, fy+1, 1, 1);
+        }
+      }
     } else if(t==='B'||t==='C'){
       ctx.fillStyle = '#6ea8d8'; ctx.fillRect(px,py,TILE,TILE);
       const u = TILE/16;
@@ -2109,6 +2235,26 @@
         ctx.fillRect(px+6*u, py+3*u, 3*u, 1*u);
         ctx.fillStyle = '#b8bcc4'; ctx.fillRect(px+3*u, py+4*u, 2*u, 1*u);
       }
+    } else if(t==='P'){
+      ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16;
+      ctx.fillStyle = '#f1e6d0'; ctx.fillRect(px+7*u, py+9*u, 2*u, 4*u);
+      ctx.fillStyle = '#d9433a'; ctx.beginPath(); ctx.ellipse(px+8*u, py+9.5*u, 4.5*u, 3.5*u, 0, Math.PI, Math.PI*2); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(px+5.5*u, py+8*u, 1.5*u, 1.5*u); ctx.fillRect(px+9*u, py+7.3*u, 1.5*u, 1.5*u);
+    } else if(t==='Y'||t==='W'){
+      ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16;
+      ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(px+2*u, py+13.5*u, 12*u, 2*u);
+      ctx.fillStyle = '#8a5a34'; ctx.fillRect(px+2*u, py+7*u, 12*u, 7*u);
+      if(t==='Y'){
+        ctx.fillStyle = '#a56b3a'; ctx.fillRect(px+2*u, py+4.5*u, 12*u, 3.5*u);
+        ctx.fillStyle = '#e0b030'; ctx.fillRect(px+7*u, py+4.5*u, 2*u, 9.5*u);
+        ctx.fillStyle = '#fff2a0'; ctx.fillRect(px+7*u, py+8*u, 2*u, 2*u);
+      } else {
+        ctx.fillStyle = '#2a1810'; ctx.fillRect(px+3*u, py+7*u, 10*u, 2*u);
+        ctx.fillStyle = '#a56b3a'; ctx.fillRect(px+2*u, py+2*u, 12*u, 3*u);
+        ctx.fillStyle = '#e0b030'; ctx.fillRect(px+7*u, py+2*u, 2*u, 3*u);
+      }
     } else if(t==='D'||t==='H'||t==='L'){
       ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
       const u = TILE/16;
@@ -2141,6 +2287,11 @@
       const wt = performance.now()/900;
       const oy = ((Math.sin(wt+wx*0.9+wy*0.7)+1)/2)*(TILE-8)+4;
       ctx.beginPath(); ctx.moveTo(px+4,py+oy); ctx.lineTo(px+TILE-4,py+oy); ctx.stroke();
+      if(state.map==='river' && (wx*7+wy*3)%13===0){   // lily pads
+        ctx.fillStyle = '#4f9a55'; ctx.beginPath(); ctx.ellipse(px+TILE/2, py+TILE/2, 8, 5, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#6ea8d8'; ctx.fillRect(px+TILE/2, py+TILE/2-1, 9, 2);
+        if((wx+wy)%2===0){ ctx.fillStyle = '#ff9ec4'; ctx.fillRect(px+TILE/2-4, py+TILE/2-4, 4, 4); }
+      }
     } else if(t==='a'||t==='b'||t==='c'){
       drawSprite(px, py, t==='b' ? ROOF_MID_TEX : ROOF_TEX, BUILDING_PALETTE, TILE/16, false);
     } else if(t==='d'||t==='e'||t==='f'){
@@ -2387,6 +2538,7 @@
   curLayout = MAP_LAYOUTS[state.map] || HOME;
   setMapSize(MAP_LAYOUTS[state.map] ? state.map : 'home');
   if(state.map==='dungeon') spawnEnemies();
+  if(state.map!=='home' && collides(state.px, state.py)){ const m0 = state.map; state.map = 'home'; goMap(m0); }   // saved spot is inside a wall after a map change
   if(!state.fruit){ state.fruit = {}; for(const k of treeKeys.concat(treeKeysN, treeKeysR)) state.fruit[k] = Math.random()<0.25; }
   updateHud();
   updateMapName();
@@ -2411,7 +2563,7 @@
     setMsg(name==='dungeon' ? '🪜 地下ダンジョンに来た!敵を倒して進もう(アクションで剣を振る)'
          : name==='cave' ? '🕳️ 洞窟に来た!暗いけど、岩から鉄がよく出るみたい'
          : name==='north' ? '⛰️ 北の山に来た!岩が鉄を含みやすいみたい'
-         : name==='river' ? '🏞️ 川の国に来た!釣りは南東の湖の桟橋でだけできるよ🎣'
+         : name==='river' ? '🏞️ 川の国に来た!広い!釣りは2つの桟橋でできるよ🎣'
          : '🏡 村に戻ってきた');
     save();
   }
