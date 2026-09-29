@@ -122,7 +122,6 @@
     <div class="left-col">
       <div class="hud">
         <span>💰 <b id="gold">50</b> G</span>
-        <span>📅 <b id="day">1</b> 日目</span>
         <span id="seedInfo">🌾 <b id="seeds">3</b></span>
         <span>🥚 <b id="eggs">0</b></span>
         <span>🪵 <b id="wood">0</b></span>
@@ -585,7 +584,7 @@
     selectedCrop:'wheat', eggs:0, toolLevel:1,
     wood:0, mikan:0, treeHits:{}, chopped:{}, fruit:null,
     stone:0, iron:0, goldOre:0, rockHits:{}, mined:{}, axeLevel:1, pickLevel:1, map:'home',
-    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, sword:false, hp:10, stairsOpen:false, chest:{counts:{}}, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
+    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, sword:false, hp:10, stairsOpen:false, dayTime:0, chest:{counts:{}}, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
     fish:{ minnow:0, ayu:0, carp:0, yamame:0, catfish:0 },
     chicken:{ fed:false, eggReady:false },
     tiles:{} // "x,y" -> {tilled, planted, growth, watered}
@@ -910,7 +909,6 @@
   function setMsg(t){ document.getElementById('msg').textContent = t; }
   function updateHud(){
     document.getElementById('gold').textContent = state.gold;
-    document.getElementById('day').textContent = state.day;
     document.getElementById('seeds').textContent = state.seedsByType[state.selectedCrop];
     document.getElementById('seedInfo').firstChild.textContent = CROPS[state.selectedCrop].emoji + ' ';
     document.getElementById('eggs').textContent = state.eggs;
@@ -1728,7 +1726,8 @@
     updateHud(); save();
   }
 
-  function sleep(){
+  const DAY_SEC = 180;   // one in-game day = 3 real minutes
+  function sleep(auto){
     const isRain = Math.random() < 0.3;
     Object.values(state.tiles).forEach(t=>{
       if(t.planted && (t.watered || isRain) && t.growth<3){ t.growth++; }
@@ -1753,7 +1752,9 @@
     for(const k of treeKeys.concat(treeKeysN, treeKeysR)){
       if(state.chopped[k]===undefined && !state.fruit[k] && Math.random()<0.2) state.fruit[k] = true;
     }
-    setMsg(isRain ? '雨の音…🌧️ 畑は自動で水やりされたよ' : 'おやすみ…🌙 また新しい一日だよ');
+    state.dayTime = 0;
+    if(auto) setMsg(isRain ? '🌧️ 雨が降った。畑は自動で水やりされたよ' : '☀️ 新しい一日が始まった');
+    else setMsg(isRain ? '雨の音…🌧️ 畑は自動で水やりされたよ' : 'おやすみ…🌙 また新しい一日だよ');
     updateHud(); draw(); save();
   }
 
@@ -2440,6 +2441,10 @@
     updateFishing(dt);
     updateCows(dt);
     updateSheep(dt);
+    if(!document.querySelector('.shop.open')){                 // the clock stops while a menu is open
+      state.dayTime = (state.dayTime||0) + dt;
+      if(state.dayTime >= DAY_SEC) sleep(true);
+    }
     if(invuln>0) invuln = Math.max(0, invuln-dt);
     if(atkCool>0) atkCool = Math.max(0, atkCool-dt);
     updateEnemies(dt);
