@@ -131,6 +131,7 @@
         <span>🔩 <b id="iron">0</b></span>
         <span>🥛 <b id="milk">0</b></span>
         <span>🐟 <b id="fish">0</b></span>
+        <span>🥇 <b id="goldore">0</b></span>
       </div>
       <canvas id="game" width="360" height="280"></canvas>
     </div>
@@ -186,10 +187,11 @@
   <div class="shop" id="northShopModal">
     <div class="shop-box">
       <h2>🏪 素材屋さん</h2>
-      <p class="sub">木材・石・鉄をまとめて買い取ります。(作物などは買い取れません)</p>
+      <p class="sub">木材・石・鉄・金鉱石をまとめて買い取ります。(作物などは買い取れません)</p>
       <div class="shop-item"><span>🪵 木材 <small id="ns_wood"></small></span><button class="nsSell" data-mat="wood">全部売る</button></div>
       <div class="shop-item"><span>🪨 石 <small id="ns_stone"></small></span><button class="nsSell" data-mat="stone">全部売る</button></div>
       <div class="shop-item"><span>🔩 鉄 <small id="ns_iron"></small></span><button class="nsSell" data-mat="iron">全部売る</button></div>
+      <div class="shop-item"><span>🥇 金鉱石 <small id="ns_goldOre"></small></span><button class="nsSell" data-mat="goldOre">全部売る</button></div>
       <div class="shop-item"><span>素材をまとめて全部売る</span><button id="nsSellAll">売る</button></div>
       <p class="sub" id="northShopInfo" style="margin-top:8px;"></p>
       <button class="close-shop" id="closeNorthShop">閉じる</button>
@@ -225,7 +227,7 @@
       </div>
       <div class="shop-item">
         <span>素材を1個売る</span>
-        <span><button class="sellMat" data-mat="wood">🪵5G</button> <button class="sellMat" data-mat="stone">🪨8G</button> <button class="sellMat" data-mat="iron">🔩30G</button></span>
+        <span><button class="sellMat" data-mat="wood">🪵5G</button> <button class="sellMat" data-mat="stone">🪨8G</button> <button class="sellMat" data-mat="iron">🔩30G</button> <button class="sellMat" data-mat="goldOre">🥇150G</button></span>
       </div>
       <div class="shop-item">
         <span>🪓 鍬を強化 (Lv<span id="toolLv">1</span>/3)</span>
@@ -361,7 +363,7 @@
   nfr(13,15,27,16,'3');      // west
   nfr(13,8,14,16,'3');       // north
   nfr(13,8,23,9,'3');        // east
-  nfr(22,3,23,9,'3');        // up to the quarry
+  nfr(22,2,23,9,'3');        // up to the quarry (and on to the cave gate)
   nfr(4,12,9,17,'7');        // pond
   nfr(17,11,22,14,'1');      // farm patch
   NORTH[7][16]='h'; NORTH[7][17]='i';  // workbench
@@ -378,8 +380,11 @@
     else if((x*5+y*11)%17===0) NORTH[y][x]='g';
   }
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
-    if(x<2||y<2||x>=COLS-2||y>=ROWS-2) NORTH[y][x]='9';
+    if(y<2) NORTH[y][x]='M';                                   // north edge: mountain range
+    else if(x<2||x>=COLS-2||y>=ROWS-2) NORTH[y][x]='9';
   }
+  NORTH[1][22]='T'; NORTH[1][23]='T';                          // toll gate to the cave
+  NORTH[0][22]='X'; NORTH[0][23]='X';                          // exit to the cave
   NORTH[22][26]='3'; NORTH[22][27]='3'; NORTH[23][26]='v'; NORTH[23][27]='v';
   clearAround(NORTH,16,7,17,7,2);
   clearAround(NORTH,20,7,20,7,2);
@@ -418,17 +423,32 @@
   clearAround(RIVER,3,2,4,2,2);
   const treeKeysR = [];
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(RIVER[y][x]==='6') treeKeysR.push('r:'+x+','+y); }
-  const MAP_LAYOUTS = { home:HOME, north:NORTH, river:RIVER };
+  // ===== Cave area (through the gate at the top of the northern mountain) =====
+  const CAVE = [];
+  for(let y=0;y<ROWS;y++){ const row=[]; for(let x=0;x<COLS;x++) row.push('0'); CAVE.push(row); }
+  function cvr(x0,y0,x1,y1,ch){ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){ if(CAVE[y] && CAVE[y][x]!==undefined) CAVE[y][x]=ch; } }
+  cvr(6,7,9,9,'N'); cvr(20,5,24,7,'N'); cvr(11,12,13,14,'N');
+  cvr(22,13,26,16,'N'); cvr(4,15,7,17,'N'); cvr(17,9,19,11,'N');   // rock pillars
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    if(CAVE[y][x]==='0' && (x*5+y*11)%5===0) CAVE[y][x]='g';       // lots of rocks
+  }
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    if(x<2||y<2||x>=COLS-2||y>=ROWS-2) CAVE[y][x]='N';
+  }
+  CAVE[22][15]='3'; CAVE[22][16]='3'; CAVE[23][15]='Q'; CAVE[23][16]='Q';   // entrance (back to the mountain)
+  clearAround(CAVE,15,20,16,22,3);
+  for(const [gx,gy] of [[5,4],[12,5],[16,6],[27,4],[26,10],[3,11],[15,12],[9,19],[25,20],[28,17]]) CAVE[gy][gx]='A'; // gold ore
+  const MAP_LAYOUTS = { home:HOME, north:NORTH, river:RIVER, cave:CAVE };
 
-  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f']);
+  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A']);
 
   let state = {
     px:6, py:5, dir:'down',
     gold:50, day:1, seedsByType:{wheat:3, tomato:0, corn:0}, harvestedByType:{wheat:0, tomato:0, corn:0},
     selectedCrop:'wheat', eggs:0, toolLevel:1,
     wood:0, mikan:0, treeHits:{}, chopped:{}, fruit:null,
-    stone:0, iron:0, rockHits:{}, mined:{}, axeLevel:1, pickLevel:1, map:'home',
-    gateOpen:false, cows:[], milk:0, northHouse:false, totalHarvest:0, gate2Open:false,
+    stone:0, iron:0, goldOre:0, rockHits:{}, mined:{}, axeLevel:1, pickLevel:1, map:'home',
+    gateOpen:false, cows:[], milk:0, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
     fish:{ minnow:0, ayu:0, carp:0, yamame:0, catfish:0 },
     chicken:{ fed:false, eggReady:false },
     tiles:{} // "x,y" -> {tilled, planted, growth, watered}
@@ -612,6 +632,8 @@
     return 'G';
   });
   const ROCK_PALETTE = { G:'#8c9098', H:'#b8bdc6', D:'#666a72' };
+  const GOLD_SPRITE = ROCK_SPRITE.map((row,y)=>row.split('').map((c,x)=>(c!=='.' && (x*3+y*5)%5===0) ? 'Y' : c).join(''));
+  const GOLD_PALETTE = { G:'#8c9098', H:'#b8bdc6', D:'#666a72', Y:'#f2c230' };
   const TREE_NOFRUIT = TREE_SPRITE.map(r=>r.replace(/A/g,'L'));
 
   // Detailed house/shop sprite (roof, windows, door)
@@ -680,17 +702,18 @@
   function tileAt(x,y){
     const c = curLayout[y] ? curLayout[y][x] : '0';
     if(c==='6' && state.chopped[K(x,y)]!==undefined) return '0';
-    if(c==='g' && state.mined[K(x,y)]!==undefined) return '0';
+    if((c==='g'||c==='A') && state.mined[K(x,y)]!==undefined) return '0';
     if(c==='G' && state.gateOpen) return '3';
     if(c==='Z' && state.gate2Open) return '3';
+    if(c==='T' && state.gate3Open) return '3';
     if(state.northHouse){ const hm = HOUSE_MAP[c]; if(hm) return hm; }
     return c;
   }
   function tileX(){ return Math.round(state.px); }
   function tileY(){ return Math.round(state.py); }
-  function K(x,y){ return (state.map==='north' ? 'n:' : state.map==='river' ? 'r:' : '') + x + ',' + y; }
+  function K(x,y){ return (state.map==='north' ? 'n:' : state.map==='river' ? 'r:' : state.map==='cave' ? 'c:' : '') + x + ',' + y; }
   function key(x,y){ return K(x,y); }
-  function parseKey(k){ const m = k.match(/^(?:(n|r):)?(-?\d+),(-?\d+)$/); return { map: m[1]==='n'?'north':m[1]==='r'?'river':'home', x:+m[2], y:+m[3] }; }
+  function parseKey(k){ const m = k.match(/^(?:(n|r|c):)?(-?\d+),(-?\d+)$/); return { map: m[1]==='n'?'north':m[1]==='r'?'river':m[1]==='c'?'cave':'home', x:+m[2], y:+m[3] }; }
   function farmTile(x,y){
     const k = key(x,y);
     if(!state.tiles[k]) state.tiles[k] = {tilled:false, planted:false, growth:0, watered:false, crop:null};
@@ -710,6 +733,7 @@
     document.getElementById('iron').textContent = state.iron;
     document.getElementById('milk').textContent = state.milk;
     document.getElementById('fish').textContent = fishCount();
+    document.getElementById('goldore').textContent = state.goldOre||0;
   }
 
   function collides(px, py){
@@ -737,7 +761,7 @@
   }
 
   const WORK_CHARS = new Set(['h','i']);
-  const GATE_CHARS = new Set(['G','Z']);
+  const GATE_CHARS = new Set(['G','Z','T']);
   const HOUSE_CHARS = new Set(['l','m','n','o','p','q']);
   const SITE_CHARS = new Set(['r','R','x','s','S','y']);
   const HOUSE_MAP = { r:'l', R:'m', x:'n', s:'o', S:'p', y:'q' };
@@ -765,13 +789,15 @@
     if(nearType('4')){ talkNPC(); return; }
     if(nearType('5')){ chickenAction(); return; }
     if(state.map==='home' && nearRanch()){ ranchAction(); return; }
-    if(nearAny(GATE_CHARS)){ openGate(findNear('G') ? 'G' : 'Z'); return; }
+    if(nearAny(GATE_CHARS)){ openGate(['G','Z','T'].find(c=>findNear(c))); return; }
     if(nearAny(HOUSE_CHARS)){ openSleep(); return; }
     if(nearAny(SITE_CHARS)){ openSite(); return; }
     if(nearAny(WORK_CHARS)){ openCraft(); return; }
-    const tr = findNear('6'), rk = findNear('g');
-    if(tr || rk){
-      if(tr && (!rk || tr[2]<=rk[2])) treeAction(tr); else rockAction(rk);
+    const tr = findNear('6'), rk = findNear('g'), ga = findNear('A');
+    const cands = [[tr,treeAction],[rk,rockAction],[ga,goldAction]].filter(c=>c[0]);
+    if(cands.length){
+      cands.sort((a,b)=>a[0][2]-b[0][2]);
+      cands[0][1](cands[0][0]);
       return;
     }
     setMsg('ここでは何もできないみたい');
@@ -838,6 +864,7 @@
   // ---- Toll gates ----
   const GATES = {
     G:{ cost:500,  key:'gateOpen',  title:'🚪 北の山への門', desc:'通行料500Gを払うと門が開いて、北の山に行けるようになります。', done:'門が開いた!北の山へ行けるよ⛰️' },
+    T:{ cost:5000, key:'gate3Open', title:'🚪 洞窟への門', desc:'通行料5000Gを払うと門が開いて、山の奥の洞窟に行けるようになります。', done:'門が開いた!洞窟へ行けるよ🕳️' },
     Z:{ cost:2000, key:'gate2Open', title:'🚪 川の国への門', desc:'通行料2000Gを払うと門が開いて、川と橋と釣り場のあるエリアに行けるようになります。', done:'門が開いた!川の国へ行けるよ🏞️' },
   };
   let curGate = 'G';
@@ -1000,9 +1027,33 @@
   }
 
   // ---- Map name label (HTML, under the instructions) ----
-  const MAP_NAMES = { home:'🏡 のんびり村', north:'⛰️ 北の山', river:'🏞️ 川の国' };
+  const MAP_NAMES = { home:'🏡 のんびり村', north:'⛰️ 北の山', river:'🏞️ 川の国', cave:'🕳️ 洞窟' };
   function updateMapName(){
     document.getElementById('mapName').textContent = MAP_NAMES[state.map] || '';
+  }
+
+  // ---- Mountain range (north edge of the northern map) ----
+  const MTN_PEAKS = [];
+  for(let k=0;k<16;k++) MTN_PEAKS.push({ x: k*2.6 - 0.5 + ((k*5)%3)*0.35, h: 1.55 + ((k*7)%4)*0.18 });
+  function mtnProfile(x){
+    let best = null;
+    for(const p of MTN_PEAKS){
+      const h = p.h - Math.abs(x - p.x)*0.95;
+      if(h > 0 && (!best || h > best.h)) best = { h, p, left: x < p.x };
+    }
+    return best;
+  }
+  function drawMountainSlice(sx, sy, wx){
+    const bottom = sy + TILE, STEP = 2;
+    for(let i=0;i<TILE;i+=STEP){
+      const r = mtnProfile(wx + (i + STEP/2)/TILE);
+      if(!r) continue;
+      const hp = r.h*TILE, top = bottom - hp;
+      ctx.fillStyle = r.left ? '#9b9793' : '#77736f';
+      ctx.fillRect(sx+i, top, STEP, hp);
+      const snowH = r.h - r.p.h*0.7;
+      if(snowH > 0){ ctx.fillStyle = r.left ? '#ffffff' : '#dfe4ea'; ctx.fillRect(sx+i, top, STEP, snowH*TILE); }
+    }
   }
 
   function findNear(ch){
@@ -1049,14 +1100,14 @@
 
   function rockAction(t){
     const k = K(t[0],t[1]);
-    const need = [5,4,3][state.pickLevel-1] || 3;
+    const need = [8,6,4][state.pickLevel-1] || 4;
     const hits = (state.rockHits[k]||0) + 1;
     triggerActionAnim('pick');
     addEffect(t[0],t[1],'rockchip');
     if(hits>=need){
       delete state.rockHits[k];
       state.mined[k] = state.day;
-      const ironP = ([0.25,0.35,0.5][state.pickLevel-1] || 0.5) + (state.map==='north' ? 0.2 : 0);
+      const ironP = ([0.25,0.35,0.5][state.pickLevel-1] || 0.5) + (state.map==='north' ? 0.2 : state.map==='cave' ? 0.35 : 0);
       if(Math.random()<ironP){
         const n = 1 + (state.pickLevel>=3 ? 1 : 0);
         state.iron += n;
@@ -1071,6 +1122,27 @@
     } else {
       state.rockHits[k] = hits;
       setMsg(`ピッケルでカーン!(${hits}/${need})`);
+    }
+    updateHud(); save();
+  }
+
+  // Gold ore: very hard (20 hits with the starting pickaxe)
+  function goldAction(t){
+    const k = K(t[0],t[1]);
+    const need = [20,15,10][state.pickLevel-1] || 10;
+    const hits = (state.rockHits[k]||0) + 1;
+    triggerActionAnim('pick');
+    addEffect(t[0],t[1],'rockchip');
+    if(hits>=need){
+      delete state.rockHits[k];
+      state.mined[k] = state.day;
+      const n = 1 + Math.floor(Math.random()*2);
+      state.goldOre = (state.goldOre||0) + n;
+      addEffect(t[0],t[1],'drop','#f2c230');
+      setMsg(`金鉱石を${n}個回収🥇`);
+    } else {
+      state.rockHits[k] = hits;
+      setMsg(`ピッケルでガキン!(${hits}/${need})`);
     }
     updateHud(); save();
   }
@@ -1151,6 +1223,7 @@
     '池のまわりは静かでね、昼寝にちょうどいい',
     '南の抜け道から村に戻れるよ',
     '南の建設予定地に家が建つらしいよ。材料と条件をそろえてね🏠',
+    '一番上の門の先に洞窟があるらしいよ(通行料5000G)🕳️',
     '建設予定地の東に素材屋があるよ。木材・石・鉄をまとめて売れるんだ🏪'
   ];
   function talkNPC(){
@@ -1192,7 +1265,8 @@
     for(const k of Object.keys(state.mined)){
       const pk = parseKey(k), x = pk.x, y = pk.y;
       const near = pk.map===state.map && Math.abs(state.px-x)<1.3 && Math.abs(state.py-y)<1.3;
-      if(state.day - state.mined[k] >= 4 && !near) delete state.mined[k];
+      const isGold = MAP_LAYOUTS[pk.map] && MAP_LAYOUTS[pk.map][y] && MAP_LAYOUTS[pk.map][y][x]==='A';
+      if(state.day - state.mined[k] >= (isGold ? 7 : 4) && !near) delete state.mined[k];
     }
     for(const k of treeKeys.concat(treeKeysN, treeKeysR)){
       if(state.chopped[k]===undefined && !state.fruit[k] && Math.random()<0.2) state.fruit[k] = true;
@@ -1204,7 +1278,7 @@
   const UPG = {
     hoe:  { name:'鍬', icon:'🌱', key:'toolLevel', costs:[{wood:5,stone:10,iron:2},{wood:10,stone:20,iron:6}], desc:['一度に5マス作業','一度に9マス作業'] },
     axe:  { name:'斧', icon:'🪓', key:'axeLevel',  costs:[{stone:8,iron:2},{stone:16,iron:6}], desc:['2回で伐採・木材+1','1回で伐採・木材+2'] },
-    pick: { name:'ピッケル', icon:'⛏️', key:'pickLevel', costs:[{wood:8,stone:6,iron:1},{wood:15,stone:14,iron:5}], desc:['4回で採掘・鉄が出やすい','3回で採掘・鉄がさらに出やすい'] },
+    pick: { name:'ピッケル', icon:'⛏️', key:'pickLevel', costs:[{wood:8,stone:6,iron:1},{wood:15,stone:14,iron:5}], desc:['6回で採掘・鉄が出やすい','4回で採掘・鉄がさらに出やすい'] },
   };
   function costStr(c){ return [c.wood&&`🪵${c.wood}`, c.stone&&`🪨${c.stone}`, c.iron&&`🔩${c.iron}`].filter(Boolean).join(' '); }
   function renderCraft(msg){
@@ -1239,7 +1313,7 @@
   document.getElementById('closeCraft').onclick = ()=>document.getElementById('craftModal').classList.remove('open');
   document.querySelectorAll('.sellMat').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      const m = btn.dataset.mat, price = {wood:5, stone:8, iron:30}[m];
+      const m = btn.dataset.mat, price = {wood:5, stone:8, iron:30, goldOre:150}[m];
       if(state[m]<=0){ setMsg('その素材がないよ'); return; }
       state[m]--; state.gold += price;
       updateHud();
@@ -1249,13 +1323,13 @@
   });
 
   // ---- North material shop (sells wood / stone / iron only) ----
-  const MAT_PRICE = { wood:5, stone:8, iron:30 };
-  const MAT_ICON = { wood:'🪵', stone:'🪨', iron:'🔩' };
+  const MAT_PRICE = { wood:5, stone:8, iron:30, goldOre:150 };
+  const MAT_ICON = { wood:'🪵', stone:'🪨', iron:'🔩', goldOre:'🥇' };
   function renderNorthShop(msg){
     let total = 0;
     for(const m of Object.keys(MAT_PRICE)){
-      document.getElementById('ns_'+m).textContent = `×${state[m]}(1個${MAT_PRICE[m]}G)`;
-      total += state[m]*MAT_PRICE[m];
+      document.getElementById('ns_'+m).textContent = `×${state[m]||0}(1個${MAT_PRICE[m]}G)`;
+      total += (state[m]||0)*MAT_PRICE[m];
     }
     document.getElementById('northShopInfo').textContent = msg || `全部売ると +${total}G / 所持金 ${state.gold}G`;
   }
@@ -1263,7 +1337,7 @@
   function sellMats(list){
     let total = 0; const sold = [];
     for(const m of list){
-      const n = state[m];
+      const n = state[m]||0;
       if(n>0){ total += n*MAT_PRICE[m]; sold.push(MAT_ICON[m]+n); state[m] = 0; }
     }
     if(total===0){ renderNorthShop('売れる素材がないよ'); return; }
@@ -1279,7 +1353,7 @@
 
   function inventorySummary(){
     const cropsStr = Object.keys(CROPS).map(k=>`${CROPS[k].emoji}${state.harvestedByType[k]||0}`).join(' ');
-    return `収穫物: ${cropsStr} / 🪵${state.wood} 🪨${state.stone} 🔩${state.iron} 🍊${state.mikan} 🥛${state.milk} 🐟${fishCount()} / 卵: ${state.eggs}個`;
+    return `収穫物: ${cropsStr} / 🪵${state.wood} 🪨${state.stone} 🔩${state.iron} 🥇${state.goldOre||0} 🍊${state.mikan} 🥛${state.milk} 🐟${fishCount()} / 卵: ${state.eggs}個`;
   }
 
   function openShop(){
@@ -1485,9 +1559,9 @@
       ctx.fillStyle = '#8a4a32';
       ctx.fillRect(px+4*u, py+5*u, 2*u, 8*u);
       ctx.fillRect(px+4*u, py+6*u, 4*u, 2*u); ctx.fillRect(px+4*u, py+10*u, 4*u, 2*u);
-    } else if(t==='G'||t==='Z'){
+    } else if(t==='G'||t==='Z'||t==='T'){
       ctx.fillStyle = '#e8dcae'; ctx.fillRect(px,py,TILE,TILE);
-    } else if(t==='3'||t==='u'||t==='v'||t==='U'||t==='V'){
+    } else if(t==='3'||t==='u'||t==='v'||t==='U'||t==='V'||t==='X'||t==='Q'){
       ctx.fillStyle = '#e8dcae';
       ctx.fillRect(px,py,TILE,TILE);
       ctx.fillStyle = 'rgba(0,0,0,0.07)';
@@ -1500,7 +1574,7 @@
       ctx.fillRect(px+3,py+TILE/2-7,TILE-6,6);
       ctx.fillStyle = '#c97b5f';
       ctx.fillRect(px+TILE/2-3,py+4,6,TILE-8);
-    } else if(t==='g'){
+    } else if(t==='g'||t==='A'){
       ctx.fillStyle = GROUND;
       ctx.fillRect(px,py,TILE,TILE);
       let shake = 0;
@@ -1510,7 +1584,11 @@
           if(a<0.5) shake = -Math.abs(Math.sin(a*60))*(1-a*2)*2.5;
         }
       }
-      drawSprite(px+shake, py, ROCK_SPRITE, ROCK_PALETTE, TILE/16, false);
+      if(t==='A'){
+        drawSprite(px+shake, py, GOLD_SPRITE, GOLD_PALETTE, TILE/16, false);
+        const tw = (Math.sin(performance.now()/300 + wx*1.7 + wy)+1)/2;
+        ctx.fillStyle = `rgba(255,248,190,${0.25+0.55*tw})`; ctx.fillRect(px+TILE*0.62, py+TILE*0.3, 3, 3);
+      } else drawSprite(px+shake, py, ROCK_SPRITE, ROCK_PALETTE, TILE/16, false);
     } else if(t==='h'||t==='i'){
       ctx.fillStyle = GROUND;
       ctx.fillRect(px,py,TILE,TILE);
@@ -1528,6 +1606,12 @@
         ctx.fillRect(px+6*u, py+3*u, 3*u, 1*u);
         ctx.fillStyle = '#b8bcc4'; ctx.fillRect(px+3*u, py+4*u, 2*u, 1*u);
       }
+    } else if(t==='M'){
+      ctx.fillStyle = '#7d7975'; ctx.fillRect(px,py,TILE,TILE);
+    } else if(t==='N'){
+      ctx.fillStyle = '#3b3742'; ctx.fillRect(px,py,TILE,TILE);
+      speckle(px,py,wx,wy,7,'rgba(255,255,255,0.08)',1,3);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(px,py+TILE-4,TILE,4);
     } else if(t==='6'||t==='9'){
       ctx.fillStyle = GROUND;
       ctx.fillRect(px,py,TILE,TILE);
@@ -1637,23 +1721,26 @@
   function addEffect(wx,wy,type,color){ effects.push({wx,wy,type,color,start:performance.now()}); }
 
   function draw(){
-    GROUND = state.map==='north' ? '#8fbf86' : state.map==='river' ? '#9fcf97' : '#a9c96e';
+    GROUND = state.map==='cave' ? '#6f6b76' : state.map==='north' ? '#8fbf86' : state.map==='river' ? '#9fcf97' : '#a9c96e';
     const {camX, camY} = camera();
     const startX = Math.floor(camX), startY = Math.floor(camY);
     const trees = [];
+    const mts = [];
     const overlays = [];
     for(let wy=startY; wy<=startY+VIEW_ROWS; wy++){
       for(let wx=startX; wx<=startX+VIEW_COLS; wx++){
         const sx = (wx-camX)*TILE, sy = (wy-camY)*TILE;
         const tt = tileAt(wx,wy);
         if(tt==='6'||tt==='9') trees.push([sx,sy,wx,wy,tt]);
-        if(tt==='G'||tt==='Z'||tt==='u'||tt==='v'||tt==='U'||tt==='V') overlays.push([sx,sy,wx,tt]);
+        if(tt==='M' && tileAt(wx,wy+1)!=='M') mts.push([sx,sy,wx]);
+        if(tt==='G'||tt==='Z'||tt==='T'||tt==='u'||tt==='v'||tt==='U'||tt==='V'||tt==='X'||tt==='Q') overlays.push([sx,sy,wx,tt]);
         drawTile(wx, wy, sx/TILE, sy/TILE);
       }
     }
     if(state.map==='home'){
       for(const c of state.cows) drawCow((c.x-camX)*TILE, (c.y-camY)*TILE, c.face||1, !c.fed && !c.milkReady, !!c.milkReady);
     }
+    for(const [msx,msy,mwx] of mts) drawMountainSlice(msx,msy,mwx);
     // Trees drawn bigger than their tile, overflowing into neighbors, on top of the base grid
     const tScale = (TILE/16)*2.6;
     const tSize = 16*tScale;
@@ -1672,7 +1759,7 @@
     // Gate and exit arrows on top of the border trees
     for(const [ox,oy,owx,ot] of overlays){
       const u = TILE/16;
-      if(ot==='G'||ot==='Z'){
+      if(ot==='G'||ot==='Z'||ot==='T'){
         const left = (owx%2===0);
         ctx.fillStyle = '#8a5a34';
         ctx.fillRect(ox,oy+3*u,TILE,2*u); ctx.fillRect(ox,oy+9*u,TILE,2*u);
@@ -1682,7 +1769,7 @@
       } else {
         ctx.fillStyle = '#e0a030';
         ctx.beginPath();
-        if(ot==='u'||ot==='V'){ ctx.moveTo(ox+TILE/2,oy+6); ctx.lineTo(ox+TILE-7,oy+TILE-7); ctx.lineTo(ox+7,oy+TILE-7); }
+        if(ot==='u'||ot==='V'||ot==='X'){ ctx.moveTo(ox+TILE/2,oy+6); ctx.lineTo(ox+TILE-7,oy+TILE-7); ctx.lineTo(ox+7,oy+TILE-7); }
         else { ctx.moveTo(ox+TILE/2,oy+TILE-6); ctx.lineTo(ox+TILE-7,oy+7); ctx.lineTo(ox+7,oy+7); }
         ctx.fill();
       }
@@ -1723,6 +1810,13 @@
     drawFishingSpot(camX, camY);
     drawPlayer(camX, camY);
     drawFishing(camX, camY);
+    if(state.map==='cave'){   // dark cave: light only around the player
+      const cx = (state.px+0.5-camX)*TILE, cy = (state.py+0.5-camY)*TILE;
+      const R = Math.max(VIEW_COLS, VIEW_ROWS)*TILE*0.55;
+      const g = ctx.createRadialGradient(cx, cy, TILE*2.2, cx, cy, R);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.7)');
+      ctx.fillStyle = g; ctx.fillRect(0,0,VIEW_COLS*TILE,VIEW_ROWS*TILE);
+    }
     if(fadeStart){
       const a = 1 - (performance.now()-fadeStart)/600;
       if(a<=0) fadeStart = 0;
@@ -1741,14 +1835,17 @@
     const prev = state.map;
     state.map = name;
     curLayout = MAP_LAYOUTS[name];
-    if(name==='north'){ state.px = 26.5; state.py = ROWS-3; state.dir = 'up'; }
+    if(name==='north' && prev==='cave'){ state.px = 22.5; state.py = 3; state.dir = 'down'; }
+    else if(name==='north'){ state.px = 26.5; state.py = ROWS-3; state.dir = 'up'; }
+    else if(name==='cave'){ state.px = 15.5; state.py = ROWS-3; state.dir = 'up'; }
     else if(name==='river'){ state.px = 3.5; state.py = 2; state.dir = 'down'; }
     else if(prev==='river'){ state.px = 3.5; state.py = ROWS-3; state.dir = 'up'; }
     else { state.px = 26.5; state.py = 2; state.dir = 'down'; }
     updateMapName();
     effects = []; actionAnim = null; fishing.phase = 'idle';
     fadeStart = performance.now();
-    setMsg(name==='north' ? '⛰️ 北の山に来た!岩が鉄を含みやすいみたい'
+    setMsg(name==='cave' ? '🕳️ 洞窟に来た!暗いけど、岩から鉄がよく出るみたい'
+         : name==='north' ? '⛰️ 北の山に来た!岩が鉄を含みやすいみたい'
          : name==='river' ? '🏞️ 川の国に来た!釣りは南東の湖の桟橋でだけできるよ🎣'
          : '🏡 村に戻ってきた');
     save();
@@ -1772,6 +1869,8 @@
     else if(curT==='v' && state.map==='north') goMap('home');
     else if(curT==='U' && state.map==='home') goMap('river');
     else if(curT==='V' && state.map==='river') goMap('home');
+    else if(curT==='X' && state.map==='north') goMap('cave');
+    else if(curT==='Q' && state.map==='cave') goMap('north');
     updateFishing(dt);
     updateCows(dt);
     draw();
