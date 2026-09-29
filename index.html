@@ -183,6 +183,19 @@
     </div>
   </div>
 
+  <div class="shop" id="northShopModal">
+    <div class="shop-box">
+      <h2>🏪 素材屋さん</h2>
+      <p class="sub">木材・石・鉄をまとめて買い取ります。(作物などは買い取れません)</p>
+      <div class="shop-item"><span>🪵 木材 <small id="ns_wood"></small></span><button class="nsSell" data-mat="wood">全部売る</button></div>
+      <div class="shop-item"><span>🪨 石 <small id="ns_stone"></small></span><button class="nsSell" data-mat="stone">全部売る</button></div>
+      <div class="shop-item"><span>🔩 鉄 <small id="ns_iron"></small></span><button class="nsSell" data-mat="iron">全部売る</button></div>
+      <div class="shop-item"><span>素材をまとめて全部売る</span><button id="nsSellAll">売る</button></div>
+      <p class="sub" id="northShopInfo" style="margin-top:8px;"></p>
+      <button class="close-shop" id="closeNorthShop">閉じる</button>
+    </div>
+  </div>
+
   <div class="shop" id="shopModal">
     <div class="shop-box">
       <h2>🏪 種屋さん</h2>
@@ -251,12 +264,12 @@
       ts = Math.min(availW/12, availH/8, 48);
     } else {
       availW = Math.min(document.documentElement.clientWidth - 16, 760) - 6;
-      availH = window.innerHeight - top - 150;
+      availH = window.innerHeight - top - 120;
       ts = Math.min(availW/11, 48);
     }
     ts = Math.max(ts, 24);
     const cols = Math.min(COLS, Math.max(8, Math.floor(availW/ts + 0.001)));
-    const rows = Math.min(ROWS, Math.max(6, Math.floor(availH/ts)));
+    const rows = Math.min(ROWS, Math.max(6, availH/ts)); // 縦は端数も使って余白なく広げる
     VIEW_COLS = cols; VIEW_ROWS = rows;
     displayW = TILE*cols;
     const scale = ts/TILE;
@@ -303,7 +316,7 @@
   for(let y=3;y<=8;y++) for(let x=22;x<=28;x++){
     if(layout[y][x]==='0' && (x*3+y*7)%3===0) layout[y][x]='g';
   }
-  layout[7][13]='h'; layout[7][14]='i'; // workbench (2 tiles wide)
+  layout[8][13]='h'; layout[8][14]='i'; // workbench (2 tiles wide, moved 1 south to stay clear of the shop)
   layout[11][7]='l'; layout[11][8]='m'; layout[11][9]='n'; // my house: roof
   layout[12][7]='o'; layout[12][8]='p'; layout[12][9]='q'; // my house: walls + door
   // Keep trees/rocks away from the shop, coop, workbench and NPC
@@ -314,7 +327,7 @@
   }
   clearAround(layout,15,4,17,5,3);   // shop
   clearAround(layout,16,8,16,8,3);   // coop
-  clearAround(layout,13,7,14,7,3);   // workbench
+  clearAround(layout,13,8,14,8,3);   // workbench
   clearAround(layout,13,4,13,4,2);   // NPC
   clearAround(layout,7,11,9,12,2);   // my house
   // Unbreakable border forest (2 tiles thick)
@@ -355,6 +368,8 @@
   NORTH[7][20]='4';                    // hermit NPC
   NORTH[18][18]='r'; NORTH[18][19]='R'; NORTH[18][20]='x';  // house construction site
   NORTH[19][18]='s'; NORTH[19][19]='S'; NORTH[19][20]='y';
+  NORTH[18][22]='a'; NORTH[18][23]='b'; NORTH[18][24]='c';  // material shop: roof
+  NORTH[19][22]='d'; NORTH[19][23]='e'; NORTH[19][24]='f';  // material shop: walls + door
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
     if(NORTH[y][x]!=='0') continue;
     if(x<=12 && y<=11 && (x*5+y*7)%4===0) NORTH[y][x]='6';        // dense forest (west)
@@ -369,6 +384,7 @@
   clearAround(NORTH,16,7,17,7,2);
   clearAround(NORTH,20,7,20,7,2);
   clearAround(NORTH,18,18,20,19,2);
+  clearAround(NORTH,22,18,24,19,3);
   const treeKeysN = [];
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(NORTH[y][x]==='6') treeKeysN.push('n:'+x+','+y); }
   let curLayout = HOME;
@@ -745,7 +761,7 @@
     const cur = tileAt(tileX(), tileY());
     if(cur==='1'){ farmAction(); return; }
     if(cur==='F'){ fishAction(); return; }
-    if(nearAny(SHOP_CHARS)){ openShop(); return; }
+    if(nearAny(SHOP_CHARS)){ if(state.map==='north') openNorthShop(); else openShop(); return; }
     if(nearType('4')){ talkNPC(); return; }
     if(nearType('5')){ chickenAction(); return; }
     if(state.map==='home' && nearRanch()){ ranchAction(); return; }
@@ -1134,7 +1150,8 @@
     '西の森は木が密集してて、みかんも実りやすいんだ',
     '池のまわりは静かでね、昼寝にちょうどいい',
     '南の抜け道から村に戻れるよ',
-    '南の建設予定地に家が建つらしいよ。材料と条件をそろえてね🏠'
+    '南の建設予定地に家が建つらしいよ。材料と条件をそろえてね🏠',
+    '建設予定地の東に素材屋があるよ。木材・石・鉄をまとめて売れるんだ🏪'
   ];
   function talkNPC(){
     const m = state.map;
@@ -1230,6 +1247,35 @@
       save();
     });
   });
+
+  // ---- North material shop (sells wood / stone / iron only) ----
+  const MAT_PRICE = { wood:5, stone:8, iron:30 };
+  const MAT_ICON = { wood:'🪵', stone:'🪨', iron:'🔩' };
+  function renderNorthShop(msg){
+    let total = 0;
+    for(const m of Object.keys(MAT_PRICE)){
+      document.getElementById('ns_'+m).textContent = `×${state[m]}(1個${MAT_PRICE[m]}G)`;
+      total += state[m]*MAT_PRICE[m];
+    }
+    document.getElementById('northShopInfo').textContent = msg || `全部売ると +${total}G / 所持金 ${state.gold}G`;
+  }
+  function openNorthShop(){ document.getElementById('northShopModal').classList.add('open'); renderNorthShop(); }
+  function sellMats(list){
+    let total = 0; const sold = [];
+    for(const m of list){
+      const n = state[m];
+      if(n>0){ total += n*MAT_PRICE[m]; sold.push(MAT_ICON[m]+n); state[m] = 0; }
+    }
+    if(total===0){ renderNorthShop('売れる素材がないよ'); return; }
+    state.gold += total;
+    updateHud(); save();
+    renderNorthShop(`${sold.join(' ')} 売れて+${total}G!`);
+  }
+  document.querySelectorAll('.nsSell').forEach(btn=>{
+    btn.addEventListener('click', ()=>sellMats([btn.dataset.mat]));
+  });
+  document.getElementById('nsSellAll').onclick = ()=>sellMats(Object.keys(MAT_PRICE));
+  document.getElementById('closeNorthShop').onclick = ()=>document.getElementById('northShopModal').classList.remove('open');
 
   function inventorySummary(){
     const cropsStr = Object.keys(CROPS).map(k=>`${CROPS[k].emoji}${state.harvestedByType[k]||0}`).join(' ');
