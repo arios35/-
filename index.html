@@ -132,6 +132,7 @@
         <span>🥛 <b id="milk">0</b></span>
         <span>🐟 <b id="fish">0</b></span>
         <span>🥇 <b id="goldore">0</b></span>
+        <span>🧶 <b id="wool">0</b></span>
       </div>
       <canvas id="game" width="360" height="280"></canvas>
     </div>
@@ -214,7 +215,7 @@
         <button data-crop="corn" class="buySeed">買う</button>
       </div>
       <div class="shop-item">
-        <span>収穫物・みかん・牛乳・魚をまとめて売る</span>
+        <span>収穫物・みかん・牛乳・魚・羊毛をまとめて売る</span>
         <button id="sellCrop">売る</button>
       </div>
       <div class="shop-item">
@@ -224,6 +225,10 @@
       <div class="shop-item">
         <span>🐄 牛を買う (300G・最大4頭)</span>
         <button id="buyCow">買う</button>
+      </div>
+      <div class="shop-item">
+        <span>🐑 羊を買う (250G・最大4頭)</span>
+        <button id="buySheep">買う</button>
       </div>
       <div class="shop-item">
         <span>素材を1個売る</span>
@@ -345,6 +350,11 @@
     layout[y][x] = (x===19||x===24||y===2||y===7) ? '8' : '0';
   }
   layout[7][21]='j';                 // pasture gate (1 tile, walkable by the player)
+  // Sheep pasture just south of the secret-passage path (interior x20-23, y11-14)
+  for(let y=10;y<=15;y++) for(let x=19;x<=24;x++){
+    layout[y][x] = (x===19||x===24||y===10||y===15) ? '8' : '0';
+  }
+  layout[10][21]='j';                // sheep pasture gate
   // Toll gate (500G) set between the border trees
   layout[1][26]='G'; layout[1][27]='G';
   // Bottom-left passage to the river area (2000G gate between the border trees)
@@ -423,21 +433,78 @@
   clearAround(RIVER,3,2,4,2,2);
   const treeKeysR = [];
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(RIVER[y][x]==='6') treeKeysR.push('r:'+x+','+y); }
-  // ===== Cave area (through the gate at the top of the northern mountain) =====
+  // ===== Cave area: a winding maze of narrow passages =====
   const CAVE = [];
-  for(let y=0;y<ROWS;y++){ const row=[]; for(let x=0;x<COLS;x++) row.push('0'); CAVE.push(row); }
-  function cvr(x0,y0,x1,y1,ch){ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){ if(CAVE[y] && CAVE[y][x]!==undefined) CAVE[y][x]=ch; } }
-  cvr(6,7,9,9,'N'); cvr(20,5,24,7,'N'); cvr(11,12,13,14,'N');
-  cvr(22,13,26,16,'N'); cvr(4,15,7,17,'N'); cvr(17,9,19,11,'N');   // rock pillars
-  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
-    if(CAVE[y][x]==='0' && (x*5+y*11)%5===0) CAVE[y][x]='g';       // lots of rocks
-  }
-  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
-    if(x<2||y<2||x>=COLS-2||y>=ROWS-2) CAVE[y][x]='N';
-  }
-  CAVE[22][15]='3'; CAVE[22][16]='3'; CAVE[23][15]='Q'; CAVE[23][16]='Q';   // entrance (back to the mountain)
-  clearAround(CAVE,15,20,16,22,3);
-  for(const [gx,gy] of [[5,4],[12,5],[16,6],[27,4],[26,10],[3,11],[15,12],[9,19],[25,20],[28,17]]) CAVE[gy][gx]='A'; // gold ore
+  for(let y=0;y<ROWS;y++){ const row=[]; for(let x=0;x<COLS;x++) row.push('N'); CAVE.push(row); }
+  (function buildCave(){
+    const CW = 9, CH = 6;                        // 9 x 6 rooms (2x2 tiles each, 1-tile walls)
+    let seed = 20240607;                         // fixed seed: the same cave every time
+    const rnd = ()=>{ seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    const at = (i,j)=>[3+3*i, 3+3*j];
+    const carve = (x0,y0,x1,y1,ch)=>{ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++) CAVE[y][x]=ch; };
+    const DIRS = { N:[0,-1], S:[0,1], E:[1,0], W:[-1,0] };
+    const OPP = { N:'S', S:'N', E:'W', W:'E' };
+    const inside = (i,j)=> i>=0 && j>=0 && i<CW && j<CH;
+    const adj = [], seen = [], dist = [];
+    for(let i=0;i<CW;i++){
+      adj.push([]); seen.push([]); dist.push([]);
+      for(let j=0;j<CH;j++){ adj[i].push([]); seen[i].push(false); dist[i].push(-1); const [x,y]=at(i,j); carve(x,y,x+1,y+1,'0'); }
+    }
+    function link(i,j,d){
+      const [dx,dy] = DIRS[d], ni = i+dx, nj = j+dy, [x,y] = at(i,j);
+      if(d==='E') carve(x+2,y,x+2,y+1,'0');
+      else if(d==='W') carve(x-1,y,x-1,y+1,'0');
+      else if(d==='S') carve(x,y+2,x+1,y+2,'0');
+      else carve(x,y-1,x+1,y-1,'0');
+      if(!adj[i][j].includes(d)) adj[i][j].push(d);
+      if(!adj[ni][nj].includes(OPP[d])) adj[ni][nj].push(OPP[d]);
+    }
+    // Depth-first maze, starting from the entrance room
+    const EI = 4, EJ = 5;
+    const stack = [[EI,EJ]]; seen[EI][EJ] = true;
+    while(stack.length){
+      const [i,j] = stack[stack.length-1];
+      const opts = Object.keys(DIRS).filter(d=>{ const ni=i+DIRS[d][0], nj=j+DIRS[d][1]; return inside(ni,nj) && !seen[ni][nj]; });
+      if(!opts.length){ stack.pop(); continue; }
+      const d = opts[Math.floor(rnd()*opts.length)];
+      const ni = i+DIRS[d][0], nj = j+DIRS[d][1];
+      link(i,j,d); seen[ni][nj] = true; stack.push([ni,nj]);
+    }
+    // A few extra openings so there are loops as well as dead ends
+    for(let n=0;n<10;n++){
+      const i = Math.floor(rnd()*CW), j = Math.floor(rnd()*CH);
+      const ds = Object.keys(DIRS).filter(d=> inside(i+DIRS[d][0], j+DIRS[d][1]) && !adj[i][j].includes(d));
+      if(ds.length) link(i,j,ds[Math.floor(rnd()*ds.length)]);
+    }
+    // Distance from the entrance
+    dist[EI][EJ] = 0;
+    const q = [[EI,EJ]];
+    while(q.length){
+      const [i,j] = q.shift();
+      for(const d of adj[i][j]){ const ni=i+DIRS[d][0], nj=j+DIRS[d][1]; if(dist[ni][nj]<0){ dist[ni][nj] = dist[i][j]+1; q.push([ni,nj]); } }
+    }
+    const cells = [];
+    for(let i=0;i<CW;i++) for(let j=0;j<CH;j++) if(!(i===EI && j===EJ)) cells.push({ i, j, deg: adj[i][j].length, d: dist[i][j], gold:false });
+    // Gold ore: deepest dead ends first
+    const deadEnds = cells.filter(c=>c.deg===1).sort((a,b)=>b.d-a.d);
+    const others = cells.filter(c=>c.deg>1).sort((a,b)=>b.d-a.d);
+    const FAR = { N:[1,1], S:[0,0], E:[0,1], W:[1,0] };   // the tile farthest from the room's only opening
+    for(const c of deadEnds.concat(others).slice(0,8)){
+      const [x,y] = at(c.i,c.j);
+      const off = c.deg===1 ? FAR[adj[c.i][c.j][0]] : [1,1];
+      CAVE[y+off[1]][x+off[0]] = 'A'; c.gold = true;
+    }
+    // Ordinary rocks: one corner tile in about half of the rooms (never blocks a passage)
+    for(const c of cells){
+      if(c.gold || rnd()>0.55) continue;
+      const [x,y] = at(c.i,c.j);
+      const ox = rnd()<0.5 ? 0 : 1, oy = rnd()<0.5 ? 0 : 1;
+      if(CAVE[y+oy][x+ox]==='0') CAVE[y+oy][x+ox] = 'g';
+    }
+    // Entrance tunnel from the south edge (leads back to the mountain)
+    carve(15,20,16,21,'0'); carve(15,22,16,22,'3');
+    CAVE[23][15]='Q'; CAVE[23][16]='Q';
+  })();
   const MAP_LAYOUTS = { home:HOME, north:NORTH, river:RIVER, cave:CAVE };
 
   const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A']);
@@ -448,7 +515,7 @@
     selectedCrop:'wheat', eggs:0, toolLevel:1,
     wood:0, mikan:0, treeHits:{}, chopped:{}, fruit:null,
     stone:0, iron:0, goldOre:0, rockHits:{}, mined:{}, axeLevel:1, pickLevel:1, map:'home',
-    gateOpen:false, cows:[], milk:0, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
+    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
     fish:{ minnow:0, ayu:0, carp:0, yamame:0, catfish:0 },
     chicken:{ fed:false, eggReady:false },
     tiles:{} // "x,y" -> {tilled, planted, growth, watered}
@@ -697,7 +764,56 @@
     }
     ctx.restore();
   }
-  const PLAYER_PALETTE = { H:'#5b3a29', S:'#f2c58a', E:'#2a2118', B:'#e29b3f', P:'#4a3a2a', O:'#2a2118' };
+  // Boy player: red cap, blue T-shirt, khaki shorts, bare legs and sneakers
+  const PLAYER_PALETTE = { C:'#d64b3c', H:'#5b3a29', S:'#f2c58a', E:'#2a2118', M:'#c9776b', B:'#4c8fd6', P:'#b08a54', O:'#4a3a2a' };
+  const BOY_LOWER = [
+    "....BBBBBBBB....",
+    "...BBBBBBBBBB...",
+    "...SBBBBBBBBS...",
+    "...SSBBBBBBSS...",
+    "....PPPPPPPP....",
+    "....PPP..PPP....",
+    "....SS....SS....",
+    "...OOO....OOO...",
+  ];
+  const BOY_FRONT = [
+    "................",
+    "......CCCC......",
+    ".....CCCCCC.....",
+    ".....CCCCCC.....",
+    "....CCCCCCCC....",
+    "....HSESSESH....",
+    "......SMMS......",
+    ".......SS.......",
+  ].concat(BOY_LOWER);
+  const BOY_BACK = [
+    "................",
+    "......CCCC......",
+    ".....CCCCCC.....",
+    ".....CCCCCC.....",
+    "....CCCCCCCC....",
+    "....HHHHHHHH....",
+    "......HHHH......",
+    ".......SS.......",
+  ].concat(BOY_LOWER);
+  const BOY_SIDE = [
+    "................",
+    ".......CCCC.....",
+    "......CCCCCC....",
+    "......CCCCCCCC..",
+    "......HSSSSS....",
+    "......HSSSES....",
+    ".......SSMS.....",
+    ".......SSS......",
+    ".....BBBBB......",
+    "....BBBBBBB.....",
+    "....BBBBBBSS....",
+    "....BB...BS.....",
+    ".....PPPPP......",
+    ".....PPP.PP.....",
+    ".....SS..SS.....",
+    "....OOO..OOO....",
+  ];
   const NPC_PALETTE    = { H:'#8a4a3a', S:'#f2c58a', E:'#2a2118', B:'#6fa86f', P:'#4a3a2a', O:'#2a2118' };
   function tileAt(x,y){
     const c = curLayout[y] ? curLayout[y][x] : '0';
@@ -734,6 +850,7 @@
     document.getElementById('milk').textContent = state.milk;
     document.getElementById('fish').textContent = fishCount();
     document.getElementById('goldore').textContent = state.goldOre||0;
+    document.getElementById('wool').textContent = state.wool||0;
   }
 
   function collides(px, py){
@@ -789,6 +906,7 @@
     if(nearType('4')){ talkNPC(); return; }
     if(nearType('5')){ chickenAction(); return; }
     if(state.map==='home' && nearRanch()){ ranchAction(); return; }
+    if(state.map==='home' && nearSheepRanch()){ sheepAction(); return; }
     if(nearAny(GATE_CHARS)){ openGate(['G','Z','T'].find(c=>findNear(c))); return; }
     if(nearAny(HOUSE_CHARS)){ openSleep(); return; }
     if(nearAny(SITE_CHARS)){ openSite(); return; }
@@ -835,6 +953,66 @@
       }
       c.x = Math.min(23, Math.max(20, c.x + (c.vx||0)*dt));
       c.y = Math.min(6, Math.max(3, c.y + (c.vy||0)*dt));
+    }
+  }
+  // ---- Sheep pasture (sheep only; they eat tomatoes, give wool) ----
+  function nearSheepRanch(){
+    const tx = tileX(), ty = tileY();
+    return tx>=19 && tx<=25 && ty>=9 && ty<=15;
+  }
+  function sheepAction(){
+    const list = state.sheep;
+    if(!list.length){ setMsg('ここは羊の牧場。お店で羊を買うとここに来るよ🐑'); return; }
+    let wool = 0;
+    for(const sh of list){ if(sh.woolReady){ sh.woolReady = false; wool++; addEffect(Math.round(sh.x),Math.round(sh.y),'pick'); } }
+    if(wool){ state.wool = (state.wool||0) + wool; setMsg(`羊毛を${wool}個刈り取った🧶`); updateHud(); save(); return; }
+    let fed = 0, short = 0;
+    for(const sh of list){
+      if(sh.fed) continue;
+      if((state.harvestedByType.tomato||0)>0){ state.harvestedByType.tomato--; sh.fed = true; fed++; addEffect(Math.round(sh.x),Math.round(sh.y),'plant'); }
+      else short++;
+    }
+    if(fed) setMsg(`トマトを${fed}頭にあげたよ🍅` + (short ? `(あと${short}頭ぶんトマトが足りない)` : ''));
+    else if(short) setMsg('トマトがないよ。畑で育てよう🍅');
+    else setMsg('みんなお腹いっぱいだよ');
+    updateHud(); save();
+  }
+  function updateSheep(dt){
+    for(const c of state.sheep){
+      c.t = (c.t||0) - dt;
+      if(c.t<=0){
+        c.t = 1 + Math.random()*2.5;
+        if(Math.random()<0.4){ c.vx = 0; c.vy = 0; }
+        else { const a = Math.random()*Math.PI*2; c.vx = Math.cos(a)*0.5; c.vy = Math.sin(a)*0.5; }
+        if(c.vx) c.face = c.vx>0 ? 1 : -1;
+      }
+      c.x = Math.min(23, Math.max(20, c.x + (c.vx||0)*dt));
+      c.y = Math.min(14, Math.max(11, c.y + (c.vy||0)*dt));
+    }
+  }
+  function drawSheep(x,y,face,hungry,wool){
+    const u = TILE/16;
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath(); ctx.ellipse(x+TILE/2, y+TILE-2, TILE*0.34, 3, 0, 0, Math.PI*2); ctx.fill();
+    ctx.save();
+    ctx.translate(x+TILE/2, y); ctx.scale(face,1); ctx.translate(-TILE/2, 0);
+    ctx.fillStyle = '#4a4038';
+    ctx.fillRect(4*u,11*u,2*u,4*u); ctx.fillRect(9*u,11*u,2*u,4*u);           // legs
+    if(wool){
+      ctx.fillStyle = '#fbfbf6';
+      for(const [cx,cy,r] of [[5,8.5,3.8],[8,6.8,4],[10.6,8.4,3.6],[7,10,3.6]]){
+        ctx.beginPath(); ctx.arc(cx*u, cy*u, r*u, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.fillStyle = '#e6e6dc'; ctx.fillRect(4*u,11*u,7*u,1*u);
+    } else {
+      ctx.fillStyle = '#e9d9c4'; ctx.fillRect(3*u,7*u,9*u,4*u);                // sheared body
+    }
+    ctx.fillStyle = '#3f3630'; ctx.fillRect(11*u,5*u,4*u,5*u);                 // head
+    ctx.fillStyle = '#f4efe6'; ctx.fillRect(13*u,6*u,1*u,1*u);                 // eye
+    ctx.restore();
+    if(wool || hungry){
+      ctx.font = Math.round(TILE*0.55)+'px sans-serif';
+      ctx.fillText(wool ? '🧶' : '🍅', x+TILE*0.2, y-2);
     }
   }
   function drawCow(x,y,face,hungry,milk){
@@ -893,6 +1071,16 @@
     state.cows.push({ x:20+Math.random()*3, y:3+Math.random()*3, fed:false, milkReady:false, face:1 });
     updateHud();
     document.getElementById('shopInfo').textContent = '牛を買ったよ🐄 店の東の牧場にいるよ。小麦をあげてね';
+    save();
+  };
+
+  document.getElementById('buySheep').onclick = ()=>{
+    if(state.sheep.length>=4){ document.getElementById('shopInfo').textContent = '羊の牧場はもう満員だよ(最大4頭)'; return; }
+    if(state.gold<250){ document.getElementById('shopInfo').textContent = 'お金が足りないよ(250G必要)'; return; }
+    state.gold -= 250;
+    state.sheep.push({ x:20+Math.random()*3, y:11+Math.random()*3, fed:false, woolReady:false, face:1 });
+    updateHud();
+    document.getElementById('shopInfo').textContent = '羊を買ったよ🐑 牛の牧場の南の牧場にいるよ。トマトをあげてね';
     save();
   };
 
@@ -1206,7 +1394,8 @@
     '左下の門の先に川の国があるよ(通行料2000G)',
     'この村、のんびりしてていいでしょ',
     'ニワトリにもエサあげてる?',
-    '雨の日は水やりしなくても育つらしいよ'
+    '雨の日は水やりしなくても育つらしいよ',
+    '牛の牧場の南に羊の牧場があるよ。羊のエサはトマトなんだ🍅'
   ];
   const riverLines = [
     '釣りは南東の湖の桟橋でしかできないんだ🎣',
@@ -1256,6 +1445,7 @@
     if(state.chicken.fed){ state.chicken.eggReady = true; }
     state.chicken.fed = false;
     for(const c of state.cows){ if(c.fed) c.milkReady = true; c.fed = false; }
+    for(const c of state.sheep){ if(c.fed) c.woolReady = true; c.fed = false; }
     state.day++;
     for(const k of Object.keys(state.chopped)){
       const pk = parseKey(k), x = pk.x, y = pk.y;
@@ -1353,7 +1543,7 @@
 
   function inventorySummary(){
     const cropsStr = Object.keys(CROPS).map(k=>`${CROPS[k].emoji}${state.harvestedByType[k]||0}`).join(' ');
-    return `収穫物: ${cropsStr} / 🪵${state.wood} 🪨${state.stone} 🔩${state.iron} 🥇${state.goldOre||0} 🍊${state.mikan} 🥛${state.milk} 🐟${fishCount()} / 卵: ${state.eggs}個`;
+    return `収穫物: ${cropsStr} / 🪵${state.wood} 🪨${state.stone} 🔩${state.iron} 🥇${state.goldOre||0} 🍊${state.mikan} 🥛${state.milk} 🧶${state.wool||0} 🐟${fishCount()} / 卵: ${state.eggs}個`;
   }
 
   function openShop(){
@@ -1384,6 +1574,7 @@
     }
     if(state.mikan>0){ total += state.mikan*12; sold.push(`🍊${state.mikan}`); state.mikan = 0; }
     if(state.milk>0){ total += state.milk*30; sold.push(`🥛${state.milk}`); state.milk = 0; }
+    if((state.wool||0)>0){ total += state.wool*45; sold.push(`🧶${state.wool}`); state.wool = 0; }
     for(const k of Object.keys(FISH)){
       const n = state.fish[k]||0;
       if(n>0){ total += n*FISH[k].price; sold.push(`${FISH[k].emoji}${n}`); state.fish[k] = 0; }
@@ -1676,26 +1867,46 @@
 
   function drawPlayer(camX, camY){
     const px = (state.px-camX)*TILE, py = (state.py-camY)*TILE;
+    const overhead = !!actionAnim && actionAnim.tool!=='hoe';   // axe / pickaxe: swing down from overhead
+    let bob = 0;
+    if(overhead){
+      const p = (performance.now() - actionAnim.start)/420;
+      bob = p<0.4 ? -2*(p/0.4) : (p<0.65 ? 1.5 : 0);            // rise on wind-up, drop on the strike
+    }
     ctx.fillStyle = 'rgba(0,0,0,0.2)';
     ctx.beginPath(); ctx.ellipse(px+TILE/2, py+TILE-3, TILE*0.28, 4, 0, 0, Math.PI*2); ctx.fill();
     const scale = TILE/16;
-    let sprite = PERSON_SPRITE, flip = false;
-    if(state.dir==='up') sprite = BACK_SPRITE;
-    else if(state.dir==='left'){ sprite = SIDE_SPRITE; flip = true; }
-    else if(state.dir==='right'){ sprite = SIDE_SPRITE; flip = false; }
-    drawSprite(px, py, sprite, PLAYER_PALETTE, scale, flip);
+    let sprite = BOY_FRONT, flip = false;
+    if(state.dir==='up') sprite = BOY_BACK;
+    else if(state.dir==='left'){ sprite = BOY_SIDE; flip = true; }
+    else if(state.dir==='right'){ sprite = BOY_SIDE; flip = false; }
+    drawSprite(px, py+bob, sprite, PLAYER_PALETTE, scale, flip);
 
     if(actionAnim){
+      const hoe = actionAnim.tool==='hoe';
+      const DUR = hoe ? 320 : 420;
       const age = performance.now() - actionAnim.start;
-      if(age > 320){ actionAnim = null; }
+      if(age > DUR){ actionAnim = null; }
       else{
-        const p = age/320;
-        const swing = Math.sin(p*Math.PI)*80 - 25; // degrees
-        let hx = px+TILE/2, hy = py+TILE/2 - 2, sign = 1;
-        if(state.dir==='left'){ hx -= 8; sign = -1; }
-        else if(state.dir==='right'){ hx += 8; sign = 1; }
-        else if(state.dir==='up'){ hy -= 6; }
-        else{ hy += 6; }
+        const p = age/DUR;
+        let swing, hx, hy, sign = 1;
+        if(hoe){
+          swing = Math.sin(p*Math.PI)*80 - 25; // degrees
+          hx = px+TILE/2; hy = py+TILE/2 - 2;
+          if(state.dir==='left'){ hx -= 8; sign = -1; }
+          else if(state.dir==='right'){ hx += 8; sign = 1; }
+          else if(state.dir==='up'){ hy -= 6; }
+          else{ hy += 6; }
+        } else {
+          // overhead chop: raise the tool up and back, then bring it down hard over the top
+          if(p<0.4) swing = 100 + (p/0.4)*65;                              // raise
+          else if(p<0.65){ const q = (p-0.4)/0.25; swing = 165 + q*q*170; } // fast downswing
+          else swing = 335 + ((p-0.65)/0.35)*15;                           // follow-through
+          hy = py + TILE/2 - 5 + bob;
+          if(state.dir==='left'){ hx = px+TILE/2 - 6; sign = -1; }
+          else if(state.dir==='right'){ hx = px+TILE/2 + 6; }
+          else { hx = px+TILE/2 + 8; }
+        }
         ctx.save();
         ctx.translate(hx, hy);
         ctx.rotate(swing*Math.PI/180*sign);
@@ -1738,6 +1949,7 @@
       }
     }
     if(state.map==='home'){
+      for(const c of state.sheep) drawSheep((c.x-camX)*TILE, (c.y-camY)*TILE, c.face||1, !c.fed && !c.woolReady, !!c.woolReady);
       for(const c of state.cows) drawCow((c.x-camX)*TILE, (c.y-camY)*TILE, c.face||1, !c.fed && !c.milkReady, !!c.milkReady);
     }
     for(const [msx,msy,mwx] of mts) drawMountainSlice(msx,msy,mwx);
@@ -1873,6 +2085,7 @@
     else if(curT==='Q' && state.map==='cave') goMap('north');
     updateFishing(dt);
     updateCows(dt);
+    updateSheep(dt);
     draw();
     requestAnimationFrame(loop);
   }
