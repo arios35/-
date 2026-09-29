@@ -31,35 +31,28 @@
   }
   h1{font-size:1.1rem; margin:4px 0 0; letter-spacing:1px;}
   .sub{color:var(--sub); font-size:0.75rem; margin:0 0 4px;}
+  .map-name{
+    font-size:0.95rem; font-weight:bold; letter-spacing:1px;
+    background:var(--panel); border:2px solid var(--ink); border-radius:999px;
+    padding:3px 16px; margin:-2px 0 2px;
+  }
   .hud{
     display:flex; gap:10px; flex-wrap:wrap; justify-content:center;
     background:var(--panel); border:2px solid var(--ink); border-radius:10px;
-    padding:8px 14px; font-size:0.8rem; max-width:480px; width:100%;
+    padding:8px 14px; font-size:0.8rem; max-width:760px; width:100%;
   }
   .hud span{white-space:nowrap;}
   canvas{
     border:3px solid var(--ink); border-radius:8px; background:#4c7a3a;
-    max-width:100%; touch-action:manipulation;
+    max-width:100%; touch-action:none;
   }
   .msg{
     min-height:1.4em; font-size:0.85rem; color:var(--accent);
-    text-align:center; max-width:480px;
+    text-align:center; max-width:760px;
   }
   .controls{
     display:flex; flex-direction:column; gap:8px; align-items:center;
-    width:100%; max-width:480px;
-  }
-  .joystick{
-    width:150px; height:150px; border-radius:50%;
-    background:var(--panel); border:3px solid var(--ink);
-    position:relative; touch-action:none; margin:6px 0;
-  }
-  .joystick-knob{
-    width:60px; height:60px; border-radius:50%;
-    background:var(--accent2); border:2px solid var(--ink);
-    position:absolute; top:50%; left:50%;
-    transform:translate(-50%,-50%);
-    pointer-events:none;
+    width:100%; max-width:760px;
   }
   button{
     background:var(--panel); border:2px solid var(--ink); border-radius:10px;
@@ -99,7 +92,7 @@
 
   .wrap{
     display:flex; flex-direction:column; align-items:center; gap:10px;
-    width:100%; max-width:480px;
+    width:100%; max-width:760px;
   }
 
   @media (orientation: landscape) and (max-height: 500px){
@@ -112,20 +105,18 @@
     }
     .left-col{ display:flex; flex-direction:column; gap:6px; align-items:center; }
     .hud{ font-size:0.7rem; padding:6px 10px; max-width:340px; }
-    canvas{ max-height:78vh; width:auto; }
     .right-col{
       display:flex; flex-direction:column; gap:6px; width:190px;
     }
     .msg{ font-size:0.75rem; max-width:190px; }
     .big-btn{ padding:12px 6px; font-size:0.85rem; }
-    .joystick{ width:110px; height:110px; }
-    .joystick-knob{ width:44px; height:44px; }
   }
 </style>
 </head>
 <body>
   <h1>🌾 のんびり農場</h1>
-  <p class="sub">矢印/WASDで移動・アクションボタンで畑仕事/会話/お世話</p>
+  <p class="sub">画面をドラッグで移動(矢印/WASDも可)・タップかアクションボタンで畑仕事/会話/お世話</p>
+  <div class="map-name" id="mapName"></div>
 
   <div class="wrap">
     <div class="left-col">
@@ -146,9 +137,6 @@
     <div class="right-col">
       <div class="msg" id="msg">畑まで歩いて「アクション」を押してみて</div>
       <div class="controls">
-        <div class="joystick" id="joystick">
-          <div class="joystick-knob" id="joystickKnob"></div>
-        </div>
         <div class="big-row">
           <button class="big-btn" id="btnAction">⚡ アクション</button>
         </div>
@@ -244,17 +232,44 @@
     lastTouchEnd = now;
   }, { passive:false });
 
-  const TILE = 30, VIEW_COLS = 14, VIEW_ROWS = 10;
+  const TILE = 30;
+  let VIEW_COLS = 14, VIEW_ROWS = 10;
   const COLS = 32, ROWS = 24; // world size (bigger than the visible viewport)
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const DPR = Math.min(window.devicePixelRatio || 1, 3);
-  const displayW = TILE*VIEW_COLS, displayH = TILE*VIEW_ROWS;
-  canvas.style.width = displayW + 'px';
-  canvas.style.height = displayH + 'px';
-  canvas.width = displayW * DPR;
-  canvas.height = displayH * DPR;
-  ctx.scale(DPR, DPR);
+  let displayW = TILE*VIEW_COLS;
+
+  // 画面サイズに合わせてゲーム画面を拡大(タイルも大きくなる)
+  function resizeCanvas(){
+    const landscape = window.innerWidth > window.innerHeight && window.innerHeight <= 500;
+    const top = canvas.getBoundingClientRect().top + window.scrollY;
+    let availW, availH, ts;
+    if(landscape){
+      availW = window.innerWidth - 16 - 190 - 14 - 6;
+      availH = window.innerHeight - top - 14;
+      ts = Math.min(availW/12, availH/8, 48);
+    } else {
+      availW = Math.min(document.documentElement.clientWidth - 16, 760) - 6;
+      availH = window.innerHeight - top - 150;
+      ts = Math.min(availW/11, 48);
+    }
+    ts = Math.max(ts, 24);
+    const cols = Math.min(COLS, Math.max(8, Math.floor(availW/ts + 0.001)));
+    const rows = Math.min(ROWS, Math.max(6, Math.floor(availH/ts)));
+    VIEW_COLS = cols; VIEW_ROWS = rows;
+    displayW = TILE*cols;
+    const scale = ts/TILE;
+    canvas.style.width = (cols*ts) + 'px';
+    canvas.style.height = (rows*ts) + 'px';
+    canvas.width = Math.round(cols*ts*DPR);
+    canvas.height = Math.round(rows*ts*DPR);
+    ctx.setTransform(DPR*scale, 0, 0, DPR*scale, 0, 0);
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('orientationchange', ()=>setTimeout(resizeCanvas, 150));
+  setTimeout(resizeCanvas, 120);
 
   const SAVE_KEY = 'nonbiri-farm-save-v1';
 
@@ -952,6 +967,28 @@
     if(bite){ ctx.font = Math.round(TILE*0.7)+'px sans-serif'; ctx.fillText('❗', sx-TILE*0.2, (state.py-camY)*TILE-6); }
   }
 
+  // ---- Fishing spot marker: a rod leaning on the pier entrance + bobbing icon ----
+  function drawFishingSpot(camX, camY){
+    if(state.map !== 'river') return;
+    const u = TILE/16;
+    const px = (17-camX)*TILE, py = (15-camY)*TILE; // pier entrance tile
+    ctx.lineWidth = 2; ctx.strokeStyle = '#6b4a2a';
+    ctx.beginPath(); ctx.moveTo(px+13*u, py+15*u); ctx.lineTo(px+21*u, py+2*u); ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.moveTo(px+21*u, py+2*u); ctx.lineTo(px+21*u, py+9*u); ctx.stroke();
+    ctx.fillStyle = '#e04a3a';
+    ctx.beginPath(); ctx.arc(px+21*u, py+9*u, 2.5, 0, Math.PI*2); ctx.fill();
+    const bob = Math.sin(performance.now()/350) * 3;
+    ctx.font = Math.round(TILE*0.8) + 'px sans-serif';
+    ctx.fillText('🎣', px + TILE*0.1, py - TILE*0.3 + bob);
+  }
+
+  // ---- Map name label (HTML, under the instructions) ----
+  const MAP_NAMES = { home:'🏡 のんびり村', north:'⛰️ 北の山', river:'🏞️ 川の国' };
+  function updateMapName(){
+    document.getElementById('mapName').textContent = MAP_NAMES[state.map] || '';
+  }
+
   function findNear(ch){
     const tx = tileX(), ty = tileY();
     const fx = state.dir==='left'?-1:state.dir==='right'?1:0;
@@ -1257,49 +1294,64 @@
   document.getElementById('closeShop').onclick = closeShop;
   document.getElementById('btnAction').onclick = action;
 
-  // Virtual joystick: drag the knob to steer freely, analog-style
+  // Floating drag control: touch anywhere on the canvas, drag to move, quick tap = action
   const inputVec = { x:0, y:0 };
   const stickVec = { x:0, y:0 };
   const keyVec = { up:false, down:false, left:false, right:false };
-  (function setupJoystick(){
-    const stick = document.getElementById('joystick');
-    const knob = document.getElementById('joystickKnob');
-    const RADIUS = 50, DEADZONE = 10;
-    let dragging = false, center = {x:0,y:0};
-    let downTime = 0, maxDist = 0;
+  const drag = { active:false, id:null, sx:0, sy:0, kx:0, ky:0, moved:false };
+  (function setupDrag(){
+    const RADIUS = 55, DEADZONE = 10;
+    let downTime = 0, maxDist = 0, sx = 0, sy = 0;
+    function scaleK(){ const r = canvas.getBoundingClientRect(); return { r, k: displayW / r.width }; }
 
     function onDown(e){
-      dragging = true;
+      if(drag.active) return;
+      e.preventDefault();
+      const {r, k} = scaleK();
+      drag.active = true; drag.id = e.pointerId; drag.moved = false;
+      sx = e.clientX; sy = e.clientY;
+      drag.sx = (sx - r.left) * k; drag.sy = (sy - r.top) * k;
+      drag.kx = 0; drag.ky = 0;
       downTime = performance.now(); maxDist = 0;
-      const r = stick.getBoundingClientRect();
-      center = { x:r.left + r.width/2, y:r.top + r.height/2 };
-      stick.setPointerCapture && e.pointerId!=null && stick.setPointerCapture(e.pointerId);
-      onMove(e);
+      canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
     }
     function onMove(e){
-      if(!dragging) return;
-      const dx = e.clientX - center.x, dy = e.clientY - center.y;
-      const dist = Math.hypot(dx,dy);
+      if(!drag.active || e.pointerId !== drag.id) return;
+      const {k} = scaleK();
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      const dist = Math.hypot(dx, dy);
       if(dist > maxDist) maxDist = dist;
-      const clamped = Math.min(dist, RADIUS);
-      const ang = Math.atan2(dy,dx);
-      const kx = Math.cos(ang)*clamped, ky = Math.sin(ang)*clamped;
-      knob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+      const clamped = Math.min(dist, RADIUS), ang = Math.atan2(dy, dx);
+      const px = Math.cos(ang) * clamped, py = Math.sin(ang) * clamped;
+      drag.kx = px * k; drag.ky = py * k;
+      drag.moved = maxDist >= 14;
       if(dist < DEADZONE){ stickVec.x = 0; stickVec.y = 0; }
-      else{ stickVec.x = (kx/RADIUS); stickVec.y = (ky/RADIUS); }
+      else { stickVec.x = px / RADIUS; stickVec.y = py / RADIUS; }
     }
-    function onUp(){
-      if(!dragging) return;
-      dragging = false; stickVec.x = 0; stickVec.y = 0;
-      knob.style.transform = 'translate(-50%,-50%)';
+    function onUp(e){
+      if(!drag.active || e.pointerId !== drag.id) return;
+      drag.active = false; drag.moved = false;
+      stickVec.x = 0; stickVec.y = 0;
       // Quick tap without dragging = action
       if(performance.now() - downTime < 300 && maxDist < 14){ action(); }
     }
-    stick.addEventListener('pointerdown', onDown);
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('pointercancel', onUp);
   })();
+
+  function drawDragGuide(){
+    if(!drag.active || !drag.moved) return;
+    ctx.save();
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(drag.sx, drag.sy, 34, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(drag.sx + drag.kx*0.6, drag.sy + drag.ky*0.6, 15, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
 
   window.addEventListener('keydown', (e)=>{
     switch(e.key){
@@ -1622,6 +1674,7 @@
       }
       ctx.globalAlpha = 1;
     }
+    drawFishingSpot(camX, camY);
     drawPlayer(camX, camY);
     drawFishing(camX, camY);
     if(fadeStart){
@@ -1629,12 +1682,14 @@
       if(a<=0) fadeStart = 0;
       else { ctx.fillStyle = `rgba(0,0,0,${a})`; ctx.fillRect(0,0,VIEW_COLS*TILE,VIEW_ROWS*TILE); }
     }
+    drawDragGuide();
   }
 
   load();
   curLayout = MAP_LAYOUTS[state.map] || HOME;
   if(!state.fruit){ state.fruit = {}; for(const k of treeKeys.concat(treeKeysN, treeKeysR)) state.fruit[k] = Math.random()<0.25; }
   updateHud();
+  updateMapName();
 
   function goMap(name){
     const prev = state.map;
@@ -1644,6 +1699,7 @@
     else if(name==='river'){ state.px = 3.5; state.py = 2; state.dir = 'down'; }
     else if(prev==='river'){ state.px = 3.5; state.py = ROWS-3; state.dir = 'up'; }
     else { state.px = 26.5; state.py = 2; state.dir = 'down'; }
+    updateMapName();
     effects = []; actionAnim = null; fishing.phase = 'idle';
     fadeStart = performance.now();
     setMsg(name==='north' ? '⛰️ 北の山に来た!岩が鉄を含みやすいみたい'
