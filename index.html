@@ -27,7 +27,7 @@
     margin:0; height:100%; background:var(--bg); color:var(--ink);
     font-family:'Courier New', ui-monospace, monospace;
     display:flex; flex-direction:column; align-items:center;
-    padding:12px; gap:10px; overflow-x:hidden;
+    padding:12px 12px 26px; gap:10px; overflow-x:hidden;
   }
   h1{font-size:1.1rem; margin:4px 0 0; letter-spacing:1px;}
   .sub{color:var(--sub); font-size:0.75rem; margin:0 0 4px;}
@@ -151,6 +151,7 @@
       <h2>🛏️ 家</h2>
       <p class="sub">1日を過ごして、翌日にしますか?(作物や牛が育ちます)</p>
       <div class="shop-item"><span>翌日へ</span><button id="doSleep">寝る</button></div>
+      <div class="shop-item"><span>📦 収納(預ける・出す)</span><button id="openStorage">開く</button></div>
       <button class="close-shop" id="closeSleep">やめる</button>
     </div>
   </div>
@@ -196,6 +197,17 @@
       <div class="shop-item"><span>素材をまとめて全部売る</span><button id="nsSellAll">売る</button></div>
       <p class="sub" id="northShopInfo" style="margin-top:8px;"></p>
       <button class="close-shop" id="closeNorthShop">閉じる</button>
+    </div>
+  </div>
+
+  <div class="shop" id="storageModal">
+    <div class="shop-box">
+      <h2>📦 収納</h2>
+      <p class="sub">家に預けたものは、ダンジョンで力尽きても失いません。</p>
+      <div class="shop-item"><span>一度に動かす数<br><small>お金は 1=100G</small></span><span><button class="amtBtn" data-amt="1">1</button> <button class="amtBtn" data-amt="10">10</button> <button class="amtBtn" data-amt="all">全部</button></span></div>
+      <div id="storageList"></div>
+      <p class="sub" id="storageInfo" style="margin-top:8px;"></p>
+      <button class="close-shop" id="closeStorage">閉じる</button>
     </div>
   </div>
 
@@ -245,19 +257,14 @@
 
 <script>
 (function(){
-  let lastTouchEnd = 0;
-  document.addEventListener('touchend', (e)=>{
-    const now = Date.now();
-    if(now - lastTouchEnd <= 350){ e.preventDefault(); }
-    lastTouchEnd = now;
-  }, { passive:false });
+  document.addEventListener('gesturestart', (e)=>e.preventDefault());   // iOS pinch zoom only (no tap swallowing)
 
   const TILE = 30;
   let VIEW_COLS = 14, VIEW_ROWS = 10;
-  const COLS = 32, ROWS = 24; // world size (bigger than the visible viewport)
+  let COLS = 32, ROWS = 24; // world size of the current map (the dungeon is bigger)
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
-  const DPR = Math.min(window.devicePixelRatio || 1, 3);
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
   let displayW = TILE*VIEW_COLS;
 
   // 画面サイズに合わせてゲーム画面を拡大(タイルも大きくなる)
@@ -271,7 +278,7 @@
       ts = Math.min(availW/12, availH/8, 48);
     } else {
       availW = Math.min(document.documentElement.clientWidth - 16, 760) - 6;
-      availH = window.innerHeight - top - 120;
+      availH = window.innerHeight - top - 140;
       ts = Math.min(availW/11, 48);
     }
     ts = Math.max(ts, 24);
@@ -434,6 +441,7 @@
   const treeKeysR = [];
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(RIVER[y][x]==='6') treeKeysR.push('r:'+x+','+y); }
   // ===== Cave area: a winding maze of narrow passages =====
+  const CAVE_STAIRS = {};
   const CAVE = [];
   for(let y=0;y<ROWS;y++){ const row=[]; for(let x=0;x<COLS;x++) row.push('N'); CAVE.push(row); }
   (function buildCave(){
@@ -485,15 +493,17 @@
     }
     const cells = [];
     for(let i=0;i<CW;i++) for(let j=0;j<CH;j++) if(!(i===EI && j===EJ)) cells.push({ i, j, deg: adj[i][j].length, d: dist[i][j], gold:false });
-    // Gold ore: deepest dead ends first
+    // Stairs down to the dungeon: the room farthest from the entrance. Gold ore: the next-deepest rooms.
     const deadEnds = cells.filter(c=>c.deg===1).sort((a,b)=>b.d-a.d);
     const others = cells.filter(c=>c.deg>1).sort((a,b)=>b.d-a.d);
     const FAR = { N:[1,1], S:[0,0], E:[0,1], W:[1,0] };   // the tile farthest from the room's only opening
-    for(const c of deadEnds.concat(others).slice(0,8)){
+    deadEnds.concat(others).slice(0,9).forEach((c,idx)=>{
       const [x,y] = at(c.i,c.j);
       const off = c.deg===1 ? FAR[adj[c.i][c.j][0]] : [1,1];
-      CAVE[y+off[1]][x+off[0]] = 'A'; c.gold = true;
-    }
+      CAVE[y+off[1]][x+off[0]] = idx===0 ? 'D' : 'A';
+      c.gold = true;
+      if(idx===0){ CAVE_STAIRS.x = x+off[0]; CAVE_STAIRS.y = y+off[1]; CAVE_STAIRS.spawnX = x+1-off[0]; CAVE_STAIRS.spawnY = y+1-off[1]; }
+    });
     // Ordinary rocks: one corner tile in about half of the rooms (never blocks a passage)
     for(const c of cells){
       if(c.gold || rnd()>0.55) continue;
@@ -505,9 +515,69 @@
     carve(15,20,16,21,'0'); carve(15,22,16,22,'3');
     CAVE[23][15]='Q'; CAVE[23][16]='Q';
   })();
-  const MAP_LAYOUTS = { home:HOME, north:NORTH, river:RIVER, cave:CAVE };
+  // ===== Dungeon (underground): a big winding maze =====
+  const DCOLS = 56, DROWS = 38;
+  const DUNGEON = [];
+  for(let y=0;y<DROWS;y++){ const row=[]; for(let x=0;x<DCOLS;x++) row.push('N'); DUNGEON.push(row); }
+  const DUNGEON_START = {};
+  const DUNGEON_ROOMS = [];
+  (function buildDungeon(){
+    const CW = 17, CH = 11;                      // 17 x 11 rooms
+    let seed = 987654321;
+    const rnd = ()=>{ seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    const at = (i,j)=>[3+3*i, 3+3*j];
+    const carve = (x0,y0,x1,y1,ch)=>{ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++) DUNGEON[y][x]=ch; };
+    const DIRS = { N:[0,-1], S:[0,1], E:[1,0], W:[-1,0] };
+    const OPP = { N:'S', S:'N', E:'W', W:'E' };
+    const inside = (i,j)=> i>=0 && j>=0 && i<CW && j<CH;
+    const adj = [], seen = [], dist = [];
+    for(let i=0;i<CW;i++){
+      adj.push([]); seen.push([]); dist.push([]);
+      for(let j=0;j<CH;j++){ adj[i].push([]); seen[i].push(false); dist[i].push(-1); const [x,y]=at(i,j); carve(x,y,x+1,y+1,'0'); }
+    }
+    function link(i,j,d){
+      const [dx,dy] = DIRS[d], ni = i+dx, nj = j+dy, [x,y] = at(i,j);
+      if(d==='E') carve(x+2,y,x+2,y+1,'0');
+      else if(d==='W') carve(x-1,y,x-1,y+1,'0');
+      else if(d==='S') carve(x,y+2,x+1,y+2,'0');
+      else carve(x,y-1,x+1,y-1,'0');
+      if(!adj[i][j].includes(d)) adj[i][j].push(d);
+      if(!adj[ni][nj].includes(OPP[d])) adj[ni][nj].push(OPP[d]);
+    }
+    const EI = 8, EJ = 10;
+    const stack = [[EI,EJ]]; seen[EI][EJ] = true;
+    while(stack.length){
+      const [i,j] = stack[stack.length-1];
+      const opts = Object.keys(DIRS).filter(d=>{ const ni=i+DIRS[d][0], nj=j+DIRS[d][1]; return inside(ni,nj) && !seen[ni][nj]; });
+      if(!opts.length){ stack.pop(); continue; }
+      const d = opts[Math.floor(rnd()*opts.length)];
+      const ni = i+DIRS[d][0], nj = j+DIRS[d][1];
+      link(i,j,d); seen[ni][nj] = true; stack.push([ni,nj]);
+    }
+    for(let n=0;n<45;n++){                        // extra openings: loops and shortcuts
+      const i = Math.floor(rnd()*CW), j = Math.floor(rnd()*CH);
+      const ds = Object.keys(DIRS).filter(d=> inside(i+DIRS[d][0], j+DIRS[d][1]) && !adj[i][j].includes(d));
+      if(ds.length) link(i,j,ds[Math.floor(rnd()*ds.length)]);
+    }
+    dist[EI][EJ] = 0;
+    const q = [[EI,EJ]];
+    while(q.length){
+      const [i,j] = q.shift();
+      for(const d of adj[i][j]){ const ni=i+DIRS[d][0], nj=j+DIRS[d][1]; if(dist[ni][nj]<0){ dist[ni][nj] = dist[i][j]+1; q.push([ni,nj]); } }
+    }
+    const [sx,sy] = at(EI,EJ);
+    DUNGEON[sy+1][sx] = 'L';                      // stairs back up
+    DUNGEON_START.spawnX = sx+1; DUNGEON_START.spawnY = sy;
+    for(let i=0;i<CW;i++) for(let j=0;j<CH;j++){
+      if(i===EI && j===EJ) continue;
+      const [x,y] = at(i,j);
+      DUNGEON_ROOMS.push({ cx:x+0.5, cy:y+0.5, d:dist[i][j] });
+    }
+  })();
+  const MAP_LAYOUTS = { home:HOME, north:NORTH, river:RIVER, cave:CAVE, dungeon:DUNGEON };
+  function setMapSize(name){ if(name==='dungeon'){ COLS = DCOLS; ROWS = DROWS; } else { COLS = 32; ROWS = 24; } }
 
-  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A']);
+  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A','D']);
 
   let state = {
     px:6, py:5, dir:'down',
@@ -515,7 +585,7 @@
     selectedCrop:'wheat', eggs:0, toolLevel:1,
     wood:0, mikan:0, treeHits:{}, chopped:{}, fruit:null,
     stone:0, iron:0, goldOre:0, rockHits:{}, mined:{}, axeLevel:1, pickLevel:1, map:'home',
-    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
+    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, sword:false, hp:10, stairsOpen:false, chest:{counts:{}}, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
     fish:{ minnow:0, ayu:0, carp:0, yamame:0, catfish:0 },
     chicken:{ fed:false, eggReady:false },
     tiles:{} // "x,y" -> {tilled, planted, growth, watered}
@@ -822,14 +892,15 @@
     if(c==='G' && state.gateOpen) return '3';
     if(c==='Z' && state.gate2Open) return '3';
     if(c==='T' && state.gate3Open) return '3';
+    if(c==='D' && state.stairsOpen) return 'H';
     if(state.northHouse){ const hm = HOUSE_MAP[c]; if(hm) return hm; }
     return c;
   }
   function tileX(){ return Math.round(state.px); }
   function tileY(){ return Math.round(state.py); }
-  function K(x,y){ return (state.map==='north' ? 'n:' : state.map==='river' ? 'r:' : state.map==='cave' ? 'c:' : '') + x + ',' + y; }
+  function K(x,y){ return (state.map==='north' ? 'n:' : state.map==='river' ? 'r:' : state.map==='cave' ? 'c:' : state.map==='dungeon' ? 'd:' : '') + x + ',' + y; }
   function key(x,y){ return K(x,y); }
-  function parseKey(k){ const m = k.match(/^(?:(n|r|c):)?(-?\d+),(-?\d+)$/); return { map: m[1]==='n'?'north':m[1]==='r'?'river':m[1]==='c'?'cave':'home', x:+m[2], y:+m[3] }; }
+  function parseKey(k){ const m = k.match(/^(?:(n|r|c|d):)?(-?\d+),(-?\d+)$/); return { map: m[1]==='n'?'north':m[1]==='r'?'river':m[1]==='c'?'cave':m[1]==='d'?'dungeon':'home', x:+m[2], y:+m[3] }; }
   function farmTile(x,y){
     const k = key(x,y);
     if(!state.tiles[k]) state.tiles[k] = {tilled:false, planted:false, growth:0, watered:false, crop:null};
@@ -878,7 +949,7 @@
   }
 
   const WORK_CHARS = new Set(['h','i']);
-  const GATE_CHARS = new Set(['G','Z','T']);
+  const GATE_CHARS = new Set(['G','Z','T','D']);
   const HOUSE_CHARS = new Set(['l','m','n','o','p','q']);
   const SITE_CHARS = new Set(['r','R','x','s','S','y']);
   const HOUSE_MAP = { r:'l', R:'m', x:'n', s:'o', S:'p', y:'q' };
@@ -899,6 +970,7 @@
   
 
   function action(){
+    if(state.map==='dungeon'){ attackAction(); return; }
     const cur = tileAt(tileX(), tileY());
     if(cur==='1'){ farmAction(); return; }
     if(cur==='F'){ fishAction(); return; }
@@ -907,7 +979,7 @@
     if(nearType('5')){ chickenAction(); return; }
     if(state.map==='home' && nearRanch()){ ranchAction(); return; }
     if(state.map==='home' && nearSheepRanch()){ sheepAction(); return; }
-    if(nearAny(GATE_CHARS)){ openGate(['G','Z','T'].find(c=>findNear(c))); return; }
+    if(nearAny(GATE_CHARS)){ openGate(['G','Z','T','D'].find(c=>findNear(c))); return; }
     if(nearAny(HOUSE_CHARS)){ openSleep(); return; }
     if(nearAny(SITE_CHARS)){ openSite(); return; }
     if(nearAny(WORK_CHARS)){ openCraft(); return; }
@@ -1042,6 +1114,7 @@
   // ---- Toll gates ----
   const GATES = {
     G:{ cost:500,  key:'gateOpen',  title:'🚪 北の山への門', desc:'通行料500Gを払うと門が開いて、北の山に行けるようになります。', done:'門が開いた!北の山へ行けるよ⛰️' },
+    D:{ cost:10000, key:'stairsOpen', title:'🪜 地下への階段', desc:'10000Gを払うと階段が使えるようになり、地下ダンジョンに行けます。ダンジョンでライフがなくなると、手荷物とお金を全部失います!(家に預けたものは無事)', done:'階段が開いた!地下ダンジョンへ行けるよ🪜' },
     T:{ cost:5000, key:'gate3Open', title:'🚪 洞窟への門', desc:'通行料5000Gを払うと門が開いて、山の奥の洞窟に行けるようになります。', done:'門が開いた!洞窟へ行けるよ🕳️' },
     Z:{ cost:2000, key:'gate2Open', title:'🚪 川の国への門', desc:'通行料2000Gを払うと門が開いて、川と橋と釣り場のあるエリアに行けるようになります。', done:'門が開いた!川の国へ行けるよ🏞️' },
   };
@@ -1091,6 +1164,74 @@
     document.getElementById('sleepModal').classList.remove('open');
     sleep();
   };
+
+  // ---- Storage at home (deposit / withdraw) ----
+  const STORE_ITEMS = [
+    { id:'gold', icon:'💰', label:'お金', unit:100 },
+    { id:'eggs', icon:'🥚', label:'卵' }, { id:'wood', icon:'🪵', label:'木材' },
+    { id:'stone', icon:'🪨', label:'石' }, { id:'iron', icon:'🔩', label:'鉄' },
+    { id:'goldOre', icon:'🥇', label:'金鉱石' }, { id:'mikan', icon:'🍊', label:'みかん' },
+    { id:'milk', icon:'🥛', label:'牛乳' }, { id:'wool', icon:'🧶', label:'羊毛' },
+    { id:'crop:wheat', icon:'🌾', label:'小麦' }, { id:'crop:tomato', icon:'🍅', label:'トマト' },
+    { id:'crop:corn', icon:'🌽', label:'とうもろこし' },
+    { id:'fish:minnow', icon:'🐟', label:'小魚' }, { id:'fish:ayu', icon:'🐟', label:'アユ' },
+    { id:'fish:carp', icon:'🐠', label:'コイ' }, { id:'fish:yamame', icon:'🐡', label:'ヤマメ' },
+    { id:'fish:catfish', icon:'🐋', label:'大ナマズ' },
+  ];
+  let storeAmt = 1;
+  function invGet(id){
+    if(id.startsWith('crop:')) return state.harvestedByType[id.slice(5)]||0;
+    if(id.startsWith('fish:')) return state.fish[id.slice(5)]||0;
+    return state[id]||0;
+  }
+  function invSet(id,v){
+    if(id.startsWith('crop:')) state.harvestedByType[id.slice(5)] = v;
+    else if(id.startsWith('fish:')) state.fish[id.slice(5)] = v;
+    else state[id] = v;
+  }
+  function chestCounts(){ if(!state.chest || !state.chest.counts) state.chest = { counts:{} }; return state.chest.counts; }
+  function moveItem(id, dir){
+    const it = STORE_ITEMS.find(i=>i.id===id), unit = it.unit||1, counts = chestCounts();
+    const want = storeAmt==='all' ? Infinity : storeAmt*unit;
+    const n = Math.min(want, dir==='in' ? invGet(id) : (counts[id]||0));
+    if(n<=0){ renderStorage('動かせるものがないよ'); return; }
+    if(dir==='in'){ invSet(id, invGet(id)-n); counts[id] = (counts[id]||0)+n; }
+    else { counts[id] = (counts[id]||0)-n; invSet(id, invGet(id)+n); }
+    updateHud(); save();
+    renderStorage(`${it.icon}${it.label} ${n}${id==='gold'?'G':'個'}を${dir==='in'?'預けた':'出した'}`);
+  }
+  function renderStorage(msg){
+    document.querySelectorAll('.amtBtn').forEach(b=>{
+      const on = String(storeAmt)===b.dataset.amt;
+      b.style.background = on ? 'var(--accent)' : ''; b.style.color = on ? '#fff' : '';
+    });
+    const list = document.getElementById('storageList'); list.innerHTML = '';
+    const counts = chestCounts(); let shown = 0;
+    for(const it of STORE_ITEMS){
+      const inv = invGet(it.id), st = counts[it.id]||0, u = it.id==='gold' ? 'G' : '';
+      if(inv<=0 && st<=0) continue;
+      shown++;
+      const row = document.createElement('div'); row.className = 'shop-item';
+      const span = document.createElement('span');
+      span.innerHTML = `${it.icon} ${it.label}<br><small>手荷物 ${inv}${u} / 家 ${st}${u}</small>`;
+      const box = document.createElement('span');
+      const b1 = document.createElement('button'); b1.textContent = '預ける'; b1.onclick = ()=>moveItem(it.id,'in');
+      const b2 = document.createElement('button'); b2.textContent = '出す'; b2.onclick = ()=>moveItem(it.id,'out');
+      box.appendChild(b1); box.appendChild(document.createTextNode(' ')); box.appendChild(b2);
+      row.appendChild(span); row.appendChild(box); list.appendChild(row);
+    }
+    if(!shown){ const p = document.createElement('p'); p.className = 'sub'; p.textContent = '預けられるものも、預けたものもまだないよ'; list.appendChild(p); }
+    document.getElementById('storageInfo').textContent = msg || '';
+  }
+  document.querySelectorAll('.amtBtn').forEach(b=>b.addEventListener('click', ()=>{
+    storeAmt = b.dataset.amt==='all' ? 'all' : +b.dataset.amt; renderStorage();
+  }));
+  document.getElementById('openStorage').onclick = ()=>{
+    document.getElementById('sleepModal').classList.remove('open');
+    document.getElementById('storageModal').classList.add('open');
+    renderStorage();
+  };
+  document.getElementById('closeStorage').onclick = ()=>document.getElementById('storageModal').classList.remove('open');
 
   // ---- House construction site (north map) ----
   const SITE_COST = { gold:2500, wood:50, stone:40, iron:15 };
@@ -1215,9 +1356,159 @@
   }
 
   // ---- Map name label (HTML, under the instructions) ----
-  const MAP_NAMES = { home:'🏡 のんびり村', north:'⛰️ 北の山', river:'🏞️ 川の国', cave:'🕳️ 洞窟' };
+  const MAP_NAMES = { home:'🏡 のんびり村', north:'⛰️ 北の山', river:'🏞️ 川の国', cave:'🕳️ 洞窟', dungeon:'⚔️ 地下ダンジョン' };
   function updateMapName(){
     document.getElementById('mapName').textContent = MAP_NAMES[state.map] || '';
+  }
+
+  // ---- Dungeon: enemies, sword, life ----
+  let enemies = [];
+  let invuln = 0, atkCool = 0;
+  const ENEMY_NAME = { slime:'スライム', bat:'コウモリ' };
+  function spawnEnemies(){
+    enemies = [];
+    const rooms = DUNGEON_ROOMS.filter(r=>r.d>=3);
+    for(let i=rooms.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); const tmp = rooms[i]; rooms[i] = rooms[j]; rooms[j] = tmp; }
+    for(const r of rooms.slice(0,60)){
+      const kind = Math.random()<0.6 ? 'slime' : 'bat';
+      enemies.push({ kind, x:r.cx, y:r.cy, hp: kind==='slime' ? 2 : 1, vx:0, vy:0, t:Math.random(), hurt:0, face:1 });
+    }
+  }
+  function nudgePos(x,y,dx,dy,dist){
+    const len = Math.hypot(dx,dy) || 1; dx /= len; dy /= len;
+    for(let s=0;s<6;s++){
+      const nx = x + dx*dist/6, ny = y + dy*dist/6;
+      if(!collides(nx,y)) x = nx;
+      if(!collides(x,ny)) y = ny;
+    }
+    return [x,y];
+  }
+  function updateEnemies(dt){
+    if(state.map!=='dungeon') return;
+    for(const e of enemies){
+      e.hurt = Math.max(0, e.hurt - dt);
+      const dx = state.px - e.x, dy = state.py - e.y, dist = Math.hypot(dx,dy);
+      const speed = e.kind==='slime' ? 1.4 : 2.3;
+      const chasing = dist < 4.5;
+      if(chasing){ e.vx = dx/(dist||1)*speed; e.vy = dy/(dist||1)*speed; }
+      else {
+        e.t -= dt;
+        if(e.t<=0){
+          e.t = (e.kind==='bat' ? 0.4 : 1) + Math.random()*1.5;
+          if(Math.random()<0.35){ e.vx = 0; e.vy = 0; }
+          else { const a = Math.random()*Math.PI*2; e.vx = Math.cos(a)*speed*0.6; e.vy = Math.sin(a)*speed*0.6; }
+        }
+      }
+      if(e.vx) e.face = e.vx>0 ? 1 : -1;
+      const nx = e.x + e.vx*dt; if(!collides(nx,e.y)) e.x = nx; else if(!chasing) e.t = 0;
+      const ny = e.y + e.vy*dt; if(!collides(e.x,ny)) e.y = ny; else if(!chasing) e.t = 0;
+      if(dist < 0.72 && invuln<=0){ hurtPlayer(dx,dy); if(state.map!=='dungeon') return; }
+    }
+  }
+  function hurtPlayer(dx,dy){
+    state.hp = Math.max(0, state.hp - 1);   // 1 = half a heart
+    invuln = 1.0;
+    const np = nudgePos(state.px, state.py, dx, dy, 0.8);
+    state.px = np[0]; state.py = np[1];
+    if(state.hp<=0){ playerDied(); return; }
+    setMsg('攻撃を受けた!');
+    save();
+  }
+  function playerDied(){
+    state.gold = 0;
+    for(const k of ['eggs','wood','mikan','stone','iron','milk','goldOre','wool']) state[k] = 0;
+    for(const k of Object.keys(state.harvestedByType)) state.harvestedByType[k] = 0;
+    for(const k of Object.keys(state.fish)) state.fish[k] = 0;
+    state.hp = 10; invuln = 0;
+    goMap('cave');
+    updateHud(); save();
+    setMsg('力尽きた…手荷物とお金を全部失った(家に預けたものは無事)');
+  }
+  function attackAction(){
+    if(!state.sword){ setMsg('剣がない!作業台で作ろう⚔️'); return; }
+    if(atkCool>0) return;
+    atkCool = 0.35;
+    triggerActionAnim('sword');
+    const fx = state.dir==='left'?-1:state.dir==='right'?1:0;
+    const fy = state.dir==='up'?-1:state.dir==='down'?1:0;
+    const cx = state.px + fx*0.75, cy = state.py + fy*0.75;
+    let killed = 0, gain = 0, name = '';
+    for(let i=enemies.length-1;i>=0;i--){
+      const e = enemies[i];
+      if(Math.hypot(e.x-cx, e.y-cy) > 1.05) continue;
+      e.hp--; e.hurt = 0.3;
+      const np = nudgePos(e.x, e.y, e.x-state.px, e.y-state.py, 0.7);
+      e.x = np[0]; e.y = np[1];
+      if(e.hp<=0){ gain += 2 + Math.floor(Math.random()*4); killed++; name = ENEMY_NAME[e.kind]; enemies.splice(i,1); }
+    }
+    if(killed){
+      state.gold += gain; updateHud(); save();
+      setMsg(killed===1 ? `${name}を倒した!+${gain}G` : `${killed}体倒した!+${gain}G`);
+    }
+  }
+  function drawEnemies(camX, camY){
+    const t = performance.now()/1000;
+    for(const e of enemies){
+      const sx = (e.x-camX)*TILE, sy = (e.y-camY)*TILE;
+      if(sx<-TILE*2 || sy<-TILE*2 || sx>VIEW_COLS*TILE+TILE || sy>VIEW_ROWS*TILE+TILE) continue;
+      const flash = e.hurt>0;
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.beginPath(); ctx.ellipse(sx+TILE/2, sy+TILE-3, TILE*0.3, 3, 0, 0, Math.PI*2); ctx.fill();
+      const cx = sx+TILE/2;
+      if(e.kind==='slime'){
+        const sq = Math.sin(t*6 + e.x*2)*0.1, w = TILE*0.78*(1+sq), h = TILE*0.6*(1-sq), by = sy+TILE-3;
+        ctx.fillStyle = flash ? '#ffffff' : '#55c46a';
+        ctx.beginPath(); ctx.moveTo(cx-w/2, by);
+        ctx.quadraticCurveTo(cx-w/2, by-h*1.3, cx, by-h*1.3);
+        ctx.quadraticCurveTo(cx+w/2, by-h*1.3, cx+w/2, by);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = flash ? '#dddddd' : '#3aa552'; ctx.fillRect(cx-w/2, by-3, w, 3);
+        ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(cx-w*0.28, by-h*0.95, 3, 2);
+        ctx.fillStyle = '#1e2a20'; ctx.fillRect(cx-w*0.22, by-h*0.6, 2.5, 3.5); ctx.fillRect(cx+w*0.1, by-h*0.6, 2.5, 3.5);
+      } else {
+        const cy = sy + TILE*0.5 + Math.sin(t*9 + e.x*3)*2, flap = Math.sin(t*22 + e.y*5);
+        ctx.fillStyle = flash ? '#ffffff' : '#5a4a86';
+        ctx.beginPath(); ctx.moveTo(cx-3,cy); ctx.lineTo(cx-13, cy-5-flap*5); ctx.lineTo(cx-10, cy+3); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(cx+3,cy); ctx.lineTo(cx+13, cy-5-flap*5); ctx.lineTo(cx+10, cy+3); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = flash ? '#ffffff' : '#3b2f5c';
+        ctx.beginPath(); ctx.ellipse(cx, cy, 5, 6, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillRect(cx-4, cy-8, 2, 3); ctx.fillRect(cx+2, cy-8, 2, 3);
+        ctx.fillStyle = '#ff5a5a'; ctx.fillRect(cx-3, cy-2, 2, 2); ctx.fillRect(cx+1, cy-2, 2, 2);
+      }
+    }
+  }
+  // Life gauge: 5 hand-drawn hearts (each heart = 2 life points = 2 hits' worth of half hearts)
+  function heartPath(x,y,s){
+    ctx.beginPath();
+    ctx.moveTo(x+s*0.5, y+s*0.92);
+    ctx.bezierCurveTo(x-s*0.12, y+s*0.55, x+s*0.05, y-s*0.05, x+s*0.5, y+s*0.28);
+    ctx.bezierCurveTo(x+s*0.95, y-s*0.05, x+s*1.12, y+s*0.55, x+s*0.5, y+s*0.92);
+    ctx.closePath();
+  }
+  function drawHearts(){
+    if(state.map!=='dungeon') return;
+    const s = 17, gap = 4, pad = 6, x0 = 8, y0 = 8;
+    const w = pad*2 + 5*s + 4*gap, h = pad*2 + s;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    if(ctx.roundRect){ ctx.beginPath(); ctx.roundRect(x0, y0, w, h, 9); ctx.fill(); }
+    else ctx.fillRect(x0, y0, w, h);
+    for(let i=0;i<5;i++){
+      const x = x0 + pad + i*(s+gap), y = y0 + pad, v = state.hp - i*2;   // v>=2 full, v==1 half
+      heartPath(x,y,s); ctx.fillStyle = '#3b2a30'; ctx.fill();
+      if(v>=1){
+        ctx.save(); heartPath(x,y,s); ctx.clip();
+        ctx.fillStyle = '#e63b4f';
+        ctx.fillRect(x-2, y-2, v>=2 ? s+4 : s/2+2, s+4);
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.fillRect(x-2, y+s*0.62, v>=2 ? s+4 : s/2+2, s*0.4);
+        ctx.restore();
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        ctx.beginPath(); ctx.ellipse(x+s*0.27, y+s*0.3, s*0.09, s*0.05, -0.6, 0, Math.PI*2); ctx.fill();
+      }
+      heartPath(x,y,s); ctx.lineWidth = 1.6; ctx.strokeStyle = '#1b0f12'; ctx.stroke();
+    }
+    ctx.restore();
   }
 
   // ---- Mountain range (north edge of the northern map) ----
@@ -1413,6 +1704,7 @@
     '南の抜け道から村に戻れるよ',
     '南の建設予定地に家が建つらしいよ。材料と条件をそろえてね🏠',
     '一番上の門の先に洞窟があるらしいよ(通行料5000G)🕳️',
+    '洞窟の一番奥に、地下へ続く階段があるって噂だよ(10000G)🪜',
     '建設予定地の東に素材屋があるよ。木材・石・鉄をまとめて売れるんだ🏪'
   ];
   function talkNPC(){
@@ -1487,6 +1779,15 @@
       }
       list.appendChild(row);
     }
+    const swRow = document.createElement('div'); swRow.className = 'shop-item';
+    const swSpan = document.createElement('span');
+    if(state.sword){ swSpan.textContent = '⚔️ 剣 (所持済み)'; swRow.appendChild(swSpan); }
+    else{
+      swSpan.innerHTML = `⚔️ 剣を作る<br><small>ダンジョンで敵を倒せる<br>${costStr(SWORD_COST)}</small>`;
+      const b = document.createElement('button'); b.textContent = '作る'; b.onclick = craftSword;
+      swRow.appendChild(swSpan); swRow.appendChild(b);
+    }
+    list.appendChild(swRow);
     document.getElementById('craftInfo').textContent = msg || `所持: 🪵${state.wood} 🪨${state.stone} 🔩${state.iron}`;
   }
   function upgradeTool(id){
@@ -1498,6 +1799,16 @@
     state[u.key]++;
     updateHud(); save();
     renderCraft(`${u.name}がLv${state[u.key]}になった!`);
+  }
+  const SWORD_COST = { wood:5, stone:10, iron:5 };
+  function craftSword(){
+    if(state.sword) return;
+    const c = SWORD_COST;
+    if(c.wood>state.wood || c.stone>state.stone || c.iron>state.iron){ renderCraft('素材が足りないよ'); return; }
+    state.wood -= c.wood; state.stone -= c.stone; state.iron -= c.iron;
+    state.sword = true;
+    updateHud(); save();
+    renderCraft('剣を作った!ダンジョンでアクションを押すと振れるよ⚔️');
   }
   function openCraft(){ document.getElementById('craftModal').classList.add('open'); renderCraft(); }
   document.getElementById('closeCraft').onclick = ()=>document.getElementById('craftModal').classList.remove('open');
@@ -1603,7 +1914,7 @@
     save();
   };
   document.getElementById('closeShop').onclick = closeShop;
-  document.getElementById('btnAction').onclick = action;
+  document.getElementById('btnAction').addEventListener('pointerdown', (e)=>{ e.preventDefault(); action(); });
 
   // Floating drag control: touch anywhere on the canvas, drag to move, quick tap = action
   const inputVec = { x:0, y:0 };
@@ -1797,6 +2108,22 @@
         ctx.fillRect(px+6*u, py+3*u, 3*u, 1*u);
         ctx.fillStyle = '#b8bcc4'; ctx.fillRect(px+3*u, py+4*u, 2*u, 1*u);
       }
+    } else if(t==='D'||t==='H'||t==='L'){
+      ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16;
+      ctx.fillStyle = '#4a4650'; ctx.fillRect(px+1*u, py+1*u, 14*u, 14*u);           // stone frame
+      ctx.fillStyle = '#15131a'; ctx.fillRect(px+3*u, py+3*u, 10*u, 10*u);           // dark hole
+      const steps = ['#6a6570','#58535f','#46424d','#34313b'];
+      for(let i=0;i<4;i++){ ctx.fillStyle = steps[i]; ctx.fillRect(px+3*u, py+(3+i*2.5)*u, 10*u, 2*u); }
+      if(t==='D'){                                                                   // barricaded until paid
+        ctx.fillStyle = '#8a5a34'; ctx.fillRect(px+1*u, py+5*u, 14*u, 2*u); ctx.fillRect(px+1*u, py+10*u, 14*u, 2*u);
+        ctx.fillStyle = '#e0b030'; ctx.fillRect(px+7*u, py+7*u, 2*u, 3*u);
+      } else {
+        ctx.fillStyle = '#e0a030'; ctx.beginPath();
+        if(t==='L'){ ctx.moveTo(px+TILE/2, py+5*u); ctx.lineTo(px+11*u, py+11*u); ctx.lineTo(px+5*u, py+11*u); }
+        else { ctx.moveTo(px+TILE/2, py+11*u); ctx.lineTo(px+11*u, py+5*u); ctx.lineTo(px+5*u, py+5*u); }
+        ctx.fill();
+      }
     } else if(t==='M'){
       ctx.fillStyle = '#7d7975'; ctx.fillRect(px,py,TILE,TILE);
     } else if(t==='N'){
@@ -1867,11 +2194,13 @@
 
   function drawPlayer(camX, camY){
     const px = (state.px-camX)*TILE, py = (state.py-camY)*TILE;
-    const overhead = !!actionAnim && actionAnim.tool!=='hoe';   // axe / pickaxe: swing down from overhead
+    const tool = actionAnim ? actionAnim.tool : null;
+    const overhead = !!tool && tool!=='hoe';        // axe / pickaxe / sword: swing down from overhead
+    const DUR = tool==='sword' ? 300 : overhead ? 420 : 320;
     let bob = 0;
     if(overhead){
-      const p = (performance.now() - actionAnim.start)/420;
-      bob = p<0.4 ? -2*(p/0.4) : (p<0.65 ? 1.5 : 0);            // rise on wind-up, drop on the strike
+      const p = (performance.now() - actionAnim.start)/DUR;
+      bob = p<0.4 ? -2*(p/0.4) : (p<0.65 ? 1.5 : 0);   // rise on wind-up, drop on the strike
     }
     ctx.fillStyle = 'rgba(0,0,0,0.2)';
     ctx.beginPath(); ctx.ellipse(px+TILE/2, py+TILE-3, TILE*0.28, 4, 0, 0, Math.PI*2); ctx.fill();
@@ -1880,17 +2209,17 @@
     if(state.dir==='up') sprite = BOY_BACK;
     else if(state.dir==='left'){ sprite = BOY_SIDE; flip = true; }
     else if(state.dir==='right'){ sprite = BOY_SIDE; flip = false; }
+    if(invuln>0 && Math.floor(performance.now()/90)%2===0) ctx.globalAlpha = 0.35;
     drawSprite(px, py+bob, sprite, PLAYER_PALETTE, scale, flip);
+    ctx.globalAlpha = 1;
 
     if(actionAnim){
-      const hoe = actionAnim.tool==='hoe';
-      const DUR = hoe ? 320 : 420;
       const age = performance.now() - actionAnim.start;
       if(age > DUR){ actionAnim = null; }
       else{
         const p = age/DUR;
         let swing, hx, hy, sign = 1;
-        if(hoe){
+        if(!overhead){
           swing = Math.sin(p*Math.PI)*80 - 25; // degrees
           hx = px+TILE/2; hy = py+TILE/2 - 2;
           if(state.dir==='left'){ hx -= 8; sign = -1; }
@@ -1898,7 +2227,7 @@
           else if(state.dir==='up'){ hy -= 6; }
           else{ hy += 6; }
         } else {
-          // overhead chop: raise the tool up and back, then bring it down hard over the top
+          // overhead: raise the tool up and back, then bring it down hard over the top
           if(p<0.4) swing = 100 + (p/0.4)*65;                              // raise
           else if(p<0.65){ const q = (p-0.4)/0.25; swing = 165 + q*q*170; } // fast downswing
           else swing = 335 + ((p-0.65)/0.35)*15;                           // follow-through
@@ -1910,16 +2239,25 @@
         ctx.save();
         ctx.translate(hx, hy);
         ctx.rotate(swing*Math.PI/180*sign);
-        ctx.fillStyle = '#6b4a2a';
-        ctx.fillRect(-2, -3, 4, 20);
-        if(actionAnim.tool==='axe'){
-          ctx.fillStyle = '#b8bcc4'; ctx.fillRect(-1, 11, 9, 8);
-          ctx.fillStyle = '#e6e9ee'; ctx.fillRect(6, 11, 3, 8);
-        } else if(actionAnim.tool==='pick'){
-          ctx.fillStyle = '#9a9a9a'; ctx.fillRect(-9, 11, 18, 3);
-          ctx.fillRect(-9, 11, 3, 7); ctx.fillRect(6, 11, 3, 7);
+        if(tool==='sword'){
+          ctx.fillStyle = '#6b4a2a'; ctx.fillRect(-2, -3, 4, 7);            // grip
+          ctx.fillStyle = '#d9b34a'; ctx.fillRect(-6, 3, 12, 3);            // guard
+          ctx.fillStyle = '#dfe5ee'; ctx.fillRect(-2.5, 6, 5, 17);          // blade
+          ctx.fillStyle = '#ffffff'; ctx.fillRect(0.5, 6, 1.5, 17);
+          ctx.fillStyle = '#dfe5ee';
+          ctx.beginPath(); ctx.moveTo(-2.5, 23); ctx.lineTo(0, 27); ctx.lineTo(2.5, 23); ctx.closePath(); ctx.fill();
         } else {
-          ctx.fillStyle = '#9a9a9a'; ctx.fillRect(-7, 15, 14, 6);
+          ctx.fillStyle = '#6b4a2a';
+          ctx.fillRect(-2, -3, 4, 20);
+          if(tool==='axe'){
+            ctx.fillStyle = '#b8bcc4'; ctx.fillRect(-1, 11, 9, 8);
+            ctx.fillStyle = '#e6e9ee'; ctx.fillRect(6, 11, 3, 8);
+          } else if(tool==='pick'){
+            ctx.fillStyle = '#9a9a9a'; ctx.fillRect(-9, 11, 18, 3);
+            ctx.fillRect(-9, 11, 3, 7); ctx.fillRect(6, 11, 3, 7);
+          } else {
+            ctx.fillStyle = '#9a9a9a'; ctx.fillRect(-7, 15, 14, 6);
+          }
         }
         ctx.restore();
       }
@@ -1932,14 +2270,16 @@
   function addEffect(wx,wy,type,color){ effects.push({wx,wy,type,color,start:performance.now()}); }
 
   function draw(){
-    GROUND = state.map==='cave' ? '#6f6b76' : state.map==='north' ? '#8fbf86' : state.map==='river' ? '#9fcf97' : '#a9c96e';
+    GROUND = state.map==='dungeon' ? '#57526a' : state.map==='cave' ? '#6f6b76' : state.map==='north' ? '#8fbf86' : state.map==='river' ? '#9fcf97' : '#a9c96e';
     const {camX, camY} = camera();
+    ctx.fillStyle = GROUND;                                   // never leave old frames showing
+    ctx.fillRect(0, 0, VIEW_COLS*TILE + TILE, VIEW_ROWS*TILE + TILE);
     const startX = Math.floor(camX), startY = Math.floor(camY);
     const trees = [];
     const mts = [];
     const overlays = [];
-    for(let wy=startY; wy<=startY+VIEW_ROWS; wy++){
-      for(let wx=startX; wx<=startX+VIEW_COLS; wx++){
+    for(let wy=startY; wy<=startY+Math.ceil(VIEW_ROWS); wy++){
+      for(let wx=startX; wx<=startX+Math.ceil(VIEW_COLS); wx++){
         const sx = (wx-camX)*TILE, sy = (wy-camY)*TILE;
         const tt = tileAt(wx,wy);
         if(tt==='6'||tt==='9') trees.push([sx,sy,wx,wy,tt]);
@@ -2019,16 +2359,21 @@
       }
       ctx.globalAlpha = 1;
     }
+    if(state.map==='dungeon') drawEnemies(camX, camY);
     drawFishingSpot(camX, camY);
     drawPlayer(camX, camY);
     drawFishing(camX, camY);
-    if(state.map==='cave'){   // dark cave: light only around the player
+    if(state.map==='cave' || state.map==='dungeon'){   // dark: light only around the player
       const cx = (state.px+0.5-camX)*TILE, cy = (state.py+0.5-camY)*TILE;
       const R = Math.max(VIEW_COLS, VIEW_ROWS)*TILE*0.55;
       const g = ctx.createRadialGradient(cx, cy, TILE*2.2, cx, cy, R);
-      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.7)');
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, state.map==='dungeon' ? 'rgba(0,0,0,0.82)' : 'rgba(0,0,0,0.7)');
       ctx.fillStyle = g; ctx.fillRect(0,0,VIEW_COLS*TILE,VIEW_ROWS*TILE);
     }
+    if(state.map==='dungeon' && invuln>0.55){
+      ctx.fillStyle = `rgba(210,30,40,${(invuln-0.55)*0.45})`; ctx.fillRect(0,0,VIEW_COLS*TILE,VIEW_ROWS*TILE);
+    }
+    drawHearts();
     if(fadeStart){
       const a = 1 - (performance.now()-fadeStart)/600;
       if(a<=0) fadeStart = 0;
@@ -2039,6 +2384,8 @@
 
   load();
   curLayout = MAP_LAYOUTS[state.map] || HOME;
+  setMapSize(MAP_LAYOUTS[state.map] ? state.map : 'home');
+  if(state.map==='dungeon') spawnEnemies();
   if(!state.fruit){ state.fruit = {}; for(const k of treeKeys.concat(treeKeysN, treeKeysR)) state.fruit[k] = Math.random()<0.25; }
   updateHud();
   updateMapName();
@@ -2046,9 +2393,13 @@
   function goMap(name){
     const prev = state.map;
     state.map = name;
+    setMapSize(name);
     curLayout = MAP_LAYOUTS[name];
+    enemies = []; invuln = 0; atkCool = 0;
     if(name==='north' && prev==='cave'){ state.px = 22.5; state.py = 3; state.dir = 'down'; }
     else if(name==='north'){ state.px = 26.5; state.py = ROWS-3; state.dir = 'up'; }
+    else if(name==='dungeon'){ state.px = DUNGEON_START.spawnX; state.py = DUNGEON_START.spawnY; state.dir = 'down'; state.hp = 10; spawnEnemies(); }
+    else if(name==='cave' && prev==='dungeon'){ state.px = CAVE_STAIRS.spawnX; state.py = CAVE_STAIRS.spawnY; state.dir = 'down'; }
     else if(name==='cave'){ state.px = 15.5; state.py = ROWS-3; state.dir = 'up'; }
     else if(name==='river'){ state.px = 3.5; state.py = 2; state.dir = 'down'; }
     else if(prev==='river'){ state.px = 3.5; state.py = ROWS-3; state.dir = 'up'; }
@@ -2056,7 +2407,8 @@
     updateMapName();
     effects = []; actionAnim = null; fishing.phase = 'idle';
     fadeStart = performance.now();
-    setMsg(name==='cave' ? '🕳️ 洞窟に来た!暗いけど、岩から鉄がよく出るみたい'
+    setMsg(name==='dungeon' ? '🪜 地下ダンジョンに来た!敵を倒して進もう(アクションで剣を振る)'
+         : name==='cave' ? '🕳️ 洞窟に来た!暗いけど、岩から鉄がよく出るみたい'
          : name==='north' ? '⛰️ 北の山に来た!岩が鉄を含みやすいみたい'
          : name==='river' ? '🏞️ 川の国に来た!釣りは南東の湖の桟橋でだけできるよ🎣'
          : '🏡 村に戻ってきた');
@@ -2083,9 +2435,14 @@
     else if(curT==='V' && state.map==='river') goMap('home');
     else if(curT==='X' && state.map==='north') goMap('cave');
     else if(curT==='Q' && state.map==='cave') goMap('north');
+    else if(curT==='H' && state.map==='cave') goMap('dungeon');
+    else if(curT==='L' && state.map==='dungeon') goMap('cave');
     updateFishing(dt);
     updateCows(dt);
     updateSheep(dt);
+    if(invuln>0) invuln = Math.max(0, invuln-dt);
+    if(atkCool>0) atkCool = Math.max(0, atkCool-dt);
+    updateEnemies(dt);
     draw();
     requestAnimationFrame(loop);
   }
