@@ -22,7 +22,7 @@
     --bg:#20241c; --panel:#2b2a20; --ink:#eee6d3; --sub:#b8ad92;
   }
   html{scroll-padding-top:env(safe-area-inset-top,0px); height:100%;}
-  *{box-sizing:border-box;}
+  *{box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent;}
   body{
     margin:0; height:100%; background:var(--bg); color:var(--ink);
     font-family:'Courier New', ui-monospace, monospace;
@@ -288,7 +288,9 @@
 
 <script>
 (function(){
-  document.addEventListener('gesturestart', (e)=>e.preventDefault());   // iOS pinch zoom only (no tap swallowing)
+  document.addEventListener('gesturestart', (e)=>e.preventDefault());
+  document.addEventListener('selectstart', (e)=>e.preventDefault());     // no text selection / copy popup on long-press
+  document.addEventListener('contextmenu', (e)=>e.preventDefault());   // iOS pinch zoom only (no tap swallowing)
 
   const TILE = 30;
   let VIEW_COLS = 14, VIEW_ROWS = 10;
