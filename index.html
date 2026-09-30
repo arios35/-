@@ -611,6 +611,19 @@
     for(let y=0;y<DROWS;y++) for(let x=0;x<DCOLS;x++) DUNGEON[y][x] = 'N';
     DUNGEON_ROOMS.length = 0;
     DUNGEON_ARENA.active = false;
+    if(BOSS_FLOORS[n]){
+      // Boss floor: one big hall with four pillars. Stairs up at the bottom, stairs down (after the fight) at the far end.
+      const w = 28, h = 18, x0 = 14, y0 = 10, cx = x0 + w/2;
+      for(let y=y0;y<y0+h;y++) for(let x=x0;x<x0+w;x++) DUNGEON[y][x] = 'E';
+      for(const p of [[x0+6,y0+4],[x0+w-8,y0+4],[x0+6,y0+h-7],[x0+w-8,y0+h-7]])
+        for(let dy=0;dy<2;dy++) for(let dx=0;dx<2;dx++) DUNGEON[p[1]+dy][p[0]+dx] = 'N';
+      DUNGEON[y0+h-1][cx] = 'L';
+      DUNGEON_START.spawnX = cx; DUNGEON_START.spawnY = y0+h-2;
+      Object.assign(DUNGEON_ARENA, { active:true, x0, y0, w, h, cx, cy:y0+3 });
+      Object.assign(DUNGEON_STAIRS, { x:cx, y:y0, spawnX:cx, spawnY:y0+1 });
+      if(state.bossDone && state.bossDone[n]) DUNGEON[y0][cx] = 'K';
+      return;
+    }
     const CW = 17, CH = 11;                      // 17 x 11 rooms
     let seed = (Math.imul(n, 2654435761) ^ 987654321) >>> 0;   // every floor has its own fixed layout
     const rnd = ()=>{ seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
@@ -1616,12 +1629,33 @@
     orc:      { name:'オーク',     hp:12, speed:1.5, chase:5 },
   };
   const TIER_KINDS = { 1:['slime','bat'], 2:['skeleton','ghost'], 3:['goblin','orc'] };
+  // Attack building blocks. Every attack = telegraph (wind) -> attack (act) -> recover (the opening!)
+  const ATTACK_DEFS = {
+    dash:     { label:'突進',       wind:0.9, speed:9,  dur:0.55, recover:1.5 },
+    leap:     { label:'ジャンプ',   wind:0.8, air:0.5, radius:1.7, recover:1.4 },
+    ring:     { label:'範囲攻撃',   wind:1.0, radius:2.6, recover:1.4 },
+    fan:      { label:'扇状弾',     wind:0.8, count:5, spread:0.9, speed:5.5, recover:1.3 },
+    nova:     { label:'全方位弾',   wind:1.0, count:12, speed:4.2, recover:1.6 },
+    rain:     { label:'降り注ぐ',   wind:0.7, count:7, delay:1.0, radius:1.1, recover:1.4 },
+    summon:   { label:'召喚',       wind:1.2, count:2, recover:1.6 },
+    teleport: { label:'瞬間移動',   wind:0.6, recover:0.9, chain:true },
+  };
   const BOSS_FLOORS = {
-    3:  { kind:'slime',    name:'キングスライム',     hp:24,  speed:1.5, scale:2.2, gold:120 },
-    6:  { kind:'bat',      name:'ヴァンパイアバット', hp:40,  speed:2.6, scale:2.0, gold:280 },
-    9:  { kind:'skeleton', name:'スケルトンロード',   hp:70,  speed:1.9, scale:2.0, gold:600 },
-    12: { kind:'ghost',    name:'ゴーストロード',     hp:100, speed:1.7, scale:2.1, gold:1100 },
-    15: { kind:'orc',      name:'オークキング',       hp:160, speed:1.8, scale:2.3, gold:2500 },
+    3:  { kind:'slime',    name:'キングスライム',     hp:60,  speed:1.3, scale:2.2, gold:120,  shot:'#5fe07a',
+          atks:  [{t:'leap',radius:1.9},{t:'nova',count:8,speed:3.6},{t:'summon',count:2}],
+          atks2: [{t:'rain',count:6,radius:1.2},{t:'leap',radius:2.2,wind:0.6}] },
+    6:  { kind:'bat',      name:'ヴァンパイアバット', hp:110, speed:2.0, scale:2.0, gold:280,  shot:'#b58cff',
+          atks:  [{t:'dash',speed:11,dur:0.6,wind:0.8,recover:1.3},{t:'fan',count:5,spread:1.1},{t:'rain',count:8}],
+          atks2: [{t:'nova',count:10},{t:'dash',speed:12.5,dur:0.7,wind:0.65}] },
+    9:  { kind:'skeleton', name:'スケルトンロード',   hp:200, speed:1.6, scale:2.0, gold:600,  shot:'#efe9d2',
+          atks:  [{t:'dash',speed:8.5},{t:'ring',radius:2.4},{t:'fan',count:3,speed:6},{t:'summon',count:2}],
+          atks2: [{t:'rain',count:9,radius:1.0},{t:'ring',radius:3.0,wind:0.8}] },
+    12: { kind:'ghost',    name:'ゴーストロード',     hp:320, speed:1.5, scale:2.1, gold:1100, shot:'#9fd0ff',
+          atks:  [{t:'teleport'},{t:'nova',count:12},{t:'fan',count:5},{t:'summon',count:2}],
+          atks2: [{t:'rain',count:9},{t:'ring',radius:3.0}] },
+    15: { kind:'orc',      name:'オークキング',       hp:520, speed:1.7, scale:2.3, gold:2500, shot:'#ff9b3a',
+          atks:  [{t:'dash',speed:9.5},{t:'ring',radius:3.2},{t:'leap',radius:2.1},{t:'fan',count:3,speed:6},{t:'summon',count:3}],
+          atks2: [{t:'rain',count:10},{t:'nova',count:12,speed:4.6}] },
   };
   const DUNGEON_GROUND = { 1:'#57526a', 2:'#4b5866', 3:'#5d5246' };
   const SWORD_DMG = [1,2,3,5,8];
@@ -1635,18 +1669,22 @@
   function makeBoss(f){
     const b = BOSS_FLOORS[f], e = makeEnemy(b.kind, DUNGEON_ARENA.cx, DUNGEON_ARENA.cy);
     e.boss = true; e.name = b.name; e.hp = e.maxhp = b.hp; e.speed = b.speed; e.scale = b.scale;
-    e.r = 0.72 + (b.scale-1)*0.45; e.gold = b.gold; e.active = false; e.summoned = false;
+    e.r = 0.72 + (b.scale-1)*0.45; e.gold = b.gold; e.active = true;
+    e.st = 'intro'; e.stT = 1.6; e.atk = null; e.lastT = ''; e.p2 = false; e.z = 0;   // a short pause before the fight starts
     return e;
   }
   function spawnEnemies(){
     enemies = [];
     const f = state.floor||1, kinds = TIER_KINDS[floorTier(f)], boss = BOSS_FLOORS[f];
+    if(boss){                                                    // boss floor: just you and the boss
+      if(!(state.bossDone && state.bossDone[f])) enemies.push(makeBoss(f));
+      return;
+    }
     const rooms = DUNGEON_ROOMS.filter(r=>r.d>=3);
     for(let i=rooms.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); const tmp = rooms[i]; rooms[i] = rooms[j]; rooms[j] = tmp; }
-    for(const r of rooms.slice(0, boss ? 28 : 55)){
+    for(const r of rooms.slice(0, 55)){
       enemies.push(makeEnemy(Math.random()<0.6 ? kinds[0] : kinds[1], r.cx, r.cy));
     }
-    if(boss && !(state.bossDone && state.bossDone[f])) enemies.push(makeBoss(f));
   }
   function inArena(x,y){
     const a = DUNGEON_ARENA;
@@ -1661,14 +1699,16 @@
     }
     return [x,y];
   }
-  function summonMinions(b){
+  function summonMinions(b, count){
     const kinds = TIER_KINDS[floorTier(state.floor||1)];
-    for(const o of [[-1.6,0],[1.6,0],[0,1.6]]){
-      const p = nudgePos(b.x, b.y, o[0], o[1], 1.6);
+    const offs = [[-2,0],[2,0],[0,2],[0,-2],[2,2],[-2,2]];
+    for(let i=0;i<(count||3);i++){
+      const o = offs[i%offs.length], p = nudgePos(b.x, b.y, o[0], o[1], 2);
       enemies.push(makeEnemy(kinds[Math.random()<0.5 ? 0 : 1], p[0], p[1]));
     }
     setMsg(`${b.name}が仲間を呼んだ!`);
   }
+
   // ---- sword enchantments (effect tables by level 0-3) ----
   const KNOCK_DIST = [0.7, 1.4, 2.1, 2.8], KNOCK_STUN = [0, 0.3, 0.5, 0.7];
   const WAVE_FACTOR = [0, 0.6, 0.8, 1.0], WAVE_RANGE = [0, 4.5, 6, 7.5];
@@ -1701,6 +1741,7 @@
     if(e.hp>0) return;
     e.dead = true;
     const i = enemies.indexOf(e); if(i>=0) enemies.splice(i,1);
+    if(e.boss){ for(const o of enemies) o.dead = true; enemies.length = 0; bossShots.length = 0; hazards.length = 0; }   // the fight is over
     let gain, ore = 0;
     if(e.boss){ gain = e.gold; ore = 3 + Math.floor((state.floor||1)/3) + Math.floor(Math.random()*3); killAcc.boss = e; }
     else { gain = 2 + Math.floor(Math.random()*4); if(floorTier(state.floor||1)>=2 && Math.random()<0.04) ore = 1; }
@@ -1720,9 +1761,186 @@
       }
     }
   }
+  // ---- Boss fights ----
+  let bossShots = [], hazards = [];
+  const inRect = (x,y)=> DUNGEON_ARENA.active && x>=DUNGEON_ARENA.x0+0.2 && x<=DUNGEON_ARENA.x0+DUNGEON_ARENA.w-1.2 && y>=DUNGEON_ARENA.y0+0.2 && y<=DUNGEON_ARENA.y0+DUNGEON_ARENA.h-1.2;
+  function pickBossAttack(e){
+    const B = BOSS_FLOORS[state.floor||1];
+    let pool = B.atks.concat(e.p2 ? B.atks2 : []);
+    pool = pool.filter(a=>!(a.t==='summon' && enemies.filter(x=>!x.boss).length>=4));
+    const other = pool.filter(a=>a.t!==e.lastT);          // never the same attack twice in a row
+    if(other.length) pool = other;
+    const c = pool[Math.floor(Math.random()*pool.length)];
+    return Object.assign({}, ATTACK_DEFS[c.t], c);
+  }
+  function bossStep(e, vx, vy, dt){
+    if(ENEMY_DEFS[e.kind].phase){                          // the ghost lord floats through pillars
+      e.x = Math.min(DUNGEON_ARENA.x0+DUNGEON_ARENA.w-1, Math.max(DUNGEON_ARENA.x0, e.x + vx*dt));
+      e.y = Math.min(DUNGEON_ARENA.y0+DUNGEON_ARENA.h-1, Math.max(DUNGEON_ARENA.y0, e.y + vy*dt));
+      return true;
+    }
+    let moved = false;
+    const nx = e.x + vx*dt; if(!collides(nx,e.y)){ e.x = nx; moved = true; }
+    const ny = e.y + vy*dt; if(!collides(e.x,ny)){ e.y = ny; moved = true; }
+    return moved;
+  }
+  function addHazard(x,y,r,delay){ hazards.push({ x, y, r, t:delay, delay, done:false, fx:0 }); }
+  function fireShot(x,y,ang,speed,color){
+    bossShots.push({ x, y, vx:Math.cos(ang)*speed, vy:Math.sin(ang)*speed, life:4, r:0.28, color });
+  }
+  function startWind(e, a){
+    e.atk = a; e.st = 'wind'; e.stT = a.wind*(e.p2 ? 0.8 : 1); e.lastT = a.t;
+    const cx = e.x+0.5, cy = e.y+0.5, pxc = state.px+0.5, pyc = state.py+0.5, d = Math.hypot(pxc-cx, pyc-cy) || 1;
+    e.dashDx = (pxc-cx)/d; e.dashDy = (pyc-cy)/d;
+    if(a.t==='leap'){
+      e.leapFrom = { x:e.x, y:e.y }; e.leapTo = { x:state.px, y:state.py };
+      addHazard(pxc, pyc, a.radius, e.stT + a.air);          // landing zone is shown from the start of the wind-up
+    } else if(a.t==='ring'){
+      addHazard(cx, cy, a.radius, e.stT);
+    }
+  }
+  function beginAct(e, a){
+    e.st = 'act';
+    const B = BOSS_FLOORS[state.floor||1], cx = e.x+0.5, cy = e.y+0.5, pxc = state.px+0.5, pyc = state.py+0.5;
+    if(a.t==='dash'){ e.stT = a.dur; return; }
+    if(a.t==='leap'){ e.stT = a.air; e.leapT0 = a.air; return; }
+    e.stT = 0.12;
+    if(a.t==='fan'){
+      const base = Math.atan2(pyc-cy, pxc-cx);
+      for(let i=0;i<a.count;i++) fireShot(cx, cy, base + (a.count>1 ? (i/(a.count-1)-0.5)*a.spread : 0), a.speed, B.shot);
+    } else if(a.t==='nova'){
+      const r0 = Math.random()*Math.PI*2;
+      for(let i=0;i<a.count;i++) fireShot(cx, cy, r0 + i*Math.PI*2/a.count, a.speed, B.shot);
+    } else if(a.t==='rain'){
+      const ar = DUNGEON_ARENA;
+      for(let i=0;i<a.count;i++){
+        let hx = pxc, hy = pyc;
+        if(i>0){ const ang = Math.random()*Math.PI*2, rr = 0.8 + Math.random()*4.2; hx += Math.cos(ang)*rr; hy += Math.sin(ang)*rr; }
+        hx = Math.min(ar.x0+ar.w-0.5, Math.max(ar.x0+0.5, hx)); hy = Math.min(ar.y0+ar.h-0.5, Math.max(ar.y0+0.5, hy));
+        addHazard(hx, hy, a.radius, a.delay + i*0.1);        // the boss is open while these fall
+      }
+    } else if(a.t==='summon'){
+      summonMinions(e, a.count);
+    } else if(a.t==='teleport'){
+      for(let k=0;k<14;k++){
+        const ang = Math.random()*Math.PI*2, rr = 2.8 + Math.random()*1.6;
+        const nx = state.px + Math.cos(ang)*rr, ny = state.py + Math.sin(ang)*rr;
+        if(inRect(nx,ny)){ e.x = nx; e.y = ny; break; }
+      }
+    }
+  }
+  function updateBoss(e, dt){
+    const cx = e.x+0.5, cy = e.y+0.5;
+    const dx = state.px+0.5-cx, dy = state.py+0.5-cy, dist = Math.hypot(dx,dy) || 0.001;
+    if(!e.p2 && e.hp<=e.maxhp/2 && e.st!=='intro'){               // second phase: angrier, more attacks, faster
+      e.p2 = true; e.st = 'recover'; e.stT = 1.4; e.atk = null; e.z = 0;
+      setMsg(`${e.name}が怒った!`);
+    }
+    e.stT -= dt;
+    const spd = e.speed * (e.p2 ? 1.25 : 1);
+    if(e.st==='intro'){
+      if(e.stT<=0){ e.st = 'move'; e.stT = 0.6; }
+    } else if(e.st==='move'){
+      if(dist>2.2) bossStep(e, dx/dist*spd, dy/dist*spd, dt);
+      if(e.stT<=0) startWind(e, pickBossAttack(e));
+    } else if(e.st==='wind'){
+      if(e.atk.t==='dash' && e.stT>0.3){ e.dashDx = dx/dist; e.dashDy = dy/dist; }   // aim freezes just before the charge
+      if(e.stT<=0) beginAct(e, e.atk);
+    } else if(e.st==='act'){
+      const a = e.atk;
+      if(a.t==='dash'){
+        const sp = a.speed * (e.p2 ? 1.1 : 1);
+        if(!bossStep(e, e.dashDx*sp, e.dashDy*sp, dt)) e.stT = 0;                    // hit a wall/pillar
+      } else if(a.t==='leap'){
+        const p = Math.min(1, 1 - Math.max(0, e.stT)/e.leapT0);
+        e.x = e.leapFrom.x + (e.leapTo.x-e.leapFrom.x)*p; e.y = e.leapFrom.y + (e.leapTo.y-e.leapFrom.y)*p;
+        e.z = Math.sin(p*Math.PI)*1.5;
+      }
+      if(e.stT<=0){
+        if(a.t==='leap'){ e.x = e.leapTo.x; e.y = e.leapTo.y; e.z = 0; }
+        e.st = 'recover'; e.stT = a.recover * (e.p2 ? 0.85 : 1);                     // the opening
+      }
+    } else if(e.st==='recover'){
+      if(e.stT<=0){
+        e.st = 'move';
+        e.stT = (e.atk && e.atk.chain) ? 0.05 : (e.p2 ? 0.5 + Math.random()*0.6 : 0.9 + Math.random()*0.8);
+      }
+    }
+    e.face = dx>=0 ? 1 : -1;
+    if(e.st!=='recover' && e.st!=='intro' && !(e.z>0.3) && dist<e.r && invuln<=0) hurtPlayer(dx,dy);   // body contact (not while dizzy)
+  }
+  function updateBossFx(dt){
+    for(let i=bossShots.length-1;i>=0;i--){
+      const sh = bossShots[i];
+      sh.x += sh.vx*dt; sh.y += sh.vy*dt; sh.life -= dt;
+      if(sh.life<=0 || SOLID.has(tileAt(Math.floor(sh.x), Math.floor(sh.y)))){ bossShots.splice(i,1); continue; }
+      const ddx = state.px+0.5-sh.x, ddy = state.py+0.5-sh.y;
+      if(invuln<=0 && Math.hypot(ddx,ddy) < sh.r + 0.32){
+        bossShots.splice(i,1);
+        hurtPlayer(ddx,ddy);
+        if(state.map!=='dungeon') return;
+      }
+    }
+    for(let i=hazards.length-1;i>=0;i--){
+      const h = hazards[i];
+      if(!h.done){
+        h.t -= dt;
+        if(h.t<=0){
+          h.done = true; h.fx = 0.35;
+          const ddx = state.px+0.5-h.x, ddy = state.py+0.5-h.y;
+          if(invuln<=0 && Math.hypot(ddx,ddy) < h.r + 0.25){ hurtPlayer(ddx,ddy); if(state.map!=='dungeon') return; }
+        }
+      } else { h.fx -= dt; if(h.fx<=0) hazards.splice(i,1); }
+    }
+  }
+  function drawBossGround(camX, camY){
+    const t = performance.now()/1000;
+    for(const e of enemies){
+      if(!e.boss || e.st!=='wind' || !e.atk) continue;
+      const a = e.atk, cx = (e.x+0.5-camX)*TILE, cy = (e.y+0.5-camY)*TILE;
+      if(a.t==='dash'){
+        const L = a.speed*a.dur*TILE, w = e.r*TILE*1.6;
+        ctx.save(); ctx.translate(cx, cy); ctx.rotate(Math.atan2(e.dashDy, e.dashDx));
+        ctx.fillStyle = `rgba(255,60,50,${0.18+0.12*Math.sin(t*16)})`; ctx.fillRect(0, -w/2, L, w);
+        ctx.strokeStyle = 'rgba(255,110,80,0.85)'; ctx.lineWidth = 2; ctx.strokeRect(0, -w/2, L, w);
+        ctx.restore();
+      } else if(a.t==='fan'){
+        const base = Math.atan2(state.py-e.y, state.px-e.x);
+        ctx.save(); ctx.strokeStyle = 'rgba(255,110,80,0.4)'; ctx.lineWidth = 1.5;
+        for(let i=0;i<a.count;i++){
+          const ang = base + (a.count>1 ? (i/(a.count-1)-0.5)*a.spread : 0);
+          ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx+Math.cos(ang)*6*TILE, cy+Math.sin(ang)*6*TILE); ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+    for(const h of hazards){
+      const hx = (h.x-camX)*TILE, hy = (h.y-camY)*TILE, r = h.r*TILE;
+      if(!h.done){
+        const prog = 1 - Math.max(0, h.t)/h.delay;
+        ctx.fillStyle = 'rgba(255,60,50,0.16)'; ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = `rgba(255,90,60,${0.15+0.3*prog})`; ctx.beginPath(); ctx.arc(hx, hy, r*prog, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,110,80,0.9)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI*2); ctx.stroke();
+      } else {
+        const f = Math.max(0, h.fx)/0.35;
+        ctx.fillStyle = `rgba(255,225,130,${0.6*f})`; ctx.beginPath(); ctx.arc(hx, hy, r*(1+(1-f)*0.15), 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = `rgba(255,255,255,${0.9*f})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI*2); ctx.stroke();
+      }
+    }
+  }
+  function drawBossShots(camX, camY){
+    for(const sh of bossShots){
+      const x = (sh.x-camX)*TILE, y = (sh.y-camY)*TILE;
+      ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = sh.color; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(x-1.5, y-1.5, 2, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
   function updateEnemies(dt){
     if(state.map!=='dungeon') return;
     updateWaves(dt);
+    updateBossFx(dt);
     for(const e of enemies.slice()){
       if(e.dead) continue;
       e.hurt = Math.max(0, e.hurt - dt);
@@ -1739,18 +1957,12 @@
           }
         }
       }
+      if(e.boss){ updateBoss(e, dt); if(state.map!=='dungeon') return; continue; }   // bosses run their own pattern (no stun)
       if(e.stun>0){ e.stun -= dt; continue; }                     // knocked out for a moment
       const def = ENEMY_DEFS[e.kind];
       const dx = state.px - e.x, dy = state.py - e.y, dist = Math.hypot(dx,dy);
-      let speed = def.speed, chasing;
-      if(e.boss){
-        speed = e.speed * (e.hp<=e.maxhp/2 ? 1.35 : 1);            // enraged at half health
-        if(!e.active && (dist<9 || inArena(state.px, state.py))){ e.active = true; setMsg(`${e.name}が現れた!`); }
-        chasing = e.active;
-        if(e.active && !e.summoned && e.hp<=e.maxhp/2){ e.summoned = true; summonMinions(e); }
-      } else chasing = dist < def.chase;
+      const speed = def.speed, chasing = dist < def.chase;
       if(chasing){ e.vx = dx/(dist||1)*speed; e.vy = dy/(dist||1)*speed; }
-      else if(e.boss){ e.vx = 0; e.vy = 0; }
       else {
         e.t -= dt;
         if(e.t<=0){
@@ -1793,7 +2005,7 @@
   // Moving between floors (fromAbove: arrived by the stairs down; otherwise came back up from below)
   function changeFloor(n, fromAbove){
     state.floor = n; buildFloor(n);
-    enemies = []; waves = []; invuln = 0;
+    enemies = []; waves = []; bossShots = []; hazards = []; invuln = 0;
     if(fromAbove){ state.px = DUNGEON_START.spawnX; state.py = DUNGEON_START.spawnY; }
     else { state.px = DUNGEON_STAIRS.spawnX; state.py = DUNGEON_STAIRS.spawnY; }
     state.dir = 'down';
@@ -1857,7 +2069,7 @@
       if(Math.hypot(e.x-cx, e.y-cy) > reach + (e.r-0.72)) continue;
       damageEnemy(e, dmg, e.x-state.px, e.y-state.py, KNOCK_DIST[kl]);
       if(e.dead) continue;
-      if(kl) e.stun = Math.max(e.stun||0, KNOCK_STUN[kl]*(e.boss ? 0.35 : 1));
+      if(kl && !e.boss) e.stun = Math.max(e.stun||0, KNOCK_STUN[kl]);   // bosses can't be stunned
       if(fl) igniteEnemy(e, FIRE_DPS[fl], FIRE_DUR[fl], fl>=3);
     }
     if(wl){
@@ -1963,7 +2175,8 @@
       const s = e.scale||1;
       const sx = (e.x-camX)*TILE, sy = (e.y-camY)*TILE;
       if(sx<-TILE*3 || sy<-TILE*3 || sx>VIEW_COLS*TILE+TILE*2 || sy>VIEW_ROWS*TILE+TILE*2) continue;
-      const flash = e.hurt>0, cx = sx+TILE/2, by = sy+TILE-3;
+      const flash = e.hurt>0 || (e.boss && e.st==='wind' && Math.floor(t*12)%2===0);
+      const cx = sx+TILE/2, by = sy+TILE-3, bb = by - (e.z||0)*TILE;   // bb = body line (lifted while leaping)
       ctx.fillStyle = 'rgba(0,0,0,0.22)';
       ctx.beginPath(); ctx.ellipse(cx, by, TILE*0.3*s, 3*Math.min(s,1.6), 0, 0, Math.PI*2); ctx.fill();
       if(e.boss){
@@ -1975,12 +2188,12 @@
         ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.translate(-cx, 0);
       }
       let top = by;
-      if(e.kind==='slime') top = drawSlime(cx,by,s,flash,t,e.x);
-      else if(e.kind==='bat') top = drawBat(cx,by,s,flash,t,e.x,e.y);
-      else if(e.kind==='ghost') top = drawGhost(cx,by,s,flash,t,e.x);
-      else if(e.kind==='skeleton') top = drawSkeleton(cx,by,s,flash,t,e.x);
-      else if(e.kind==='goblin') top = drawGoblin(cx,by,s,flash,t,e.x);
-      else top = drawOrc(cx,by,s,flash,t,e.x);
+      if(e.kind==='slime') top = drawSlime(cx,bb,s,flash,t,e.x);
+      else if(e.kind==='bat') top = drawBat(cx,bb,s,flash,t,e.x,e.y);
+      else if(e.kind==='ghost') top = drawGhost(cx,bb,s,flash,t,e.x);
+      else if(e.kind==='skeleton') top = drawSkeleton(cx,bb,s,flash,t,e.x);
+      else if(e.kind==='goblin') top = drawGoblin(cx,bb,s,flash,t,e.x);
+      else top = drawOrc(cx,bb,s,flash,t,e.x);
       ctx.restore();
       if(e.burnT>0){                                              // flames on burning enemies
         const fl = Math.sin(t*20 + e.x*5)*2*s;
@@ -1990,7 +2203,19 @@
         ctx.fillStyle = 'rgba(255,225,80,0.9)';
         ctx.beginPath(); ctx.moveTo(cx-3*s, by-6*s); ctx.lineTo(cx+fl*0.5, by-13*s); ctx.lineTo(cx+3*s, by-6*s); ctx.closePath(); ctx.fill();
       }
-      if(e.boss) drawCrown(cx, top, s);
+      if(e.boss){
+        drawCrown(cx, top, s);
+        if(e.st==='recover'){                                     // dizzy stars = the opening
+          ctx.fillStyle = '#ffe14a';
+          for(let i=0;i<3;i++){ const a = t*4 + i*2.1; ctx.fillRect(cx + Math.cos(a)*11*s*0.7 - 2, top - 9*s + Math.sin(a)*3 - 2, 4, 4); }
+        }
+        if(e.st==='wind' && e.atk){                               // announce the attack
+          ctx.save(); ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+          ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.lineWidth = 3; ctx.strokeText(e.atk.label, cx, top - 16*s);
+          ctx.fillStyle = '#ffd0c8'; ctx.fillText(e.atk.label, cx, top - 16*s);
+          ctx.restore();
+        }
+      }
     }
   }
   function drawWaves(camX, camY){
@@ -3023,7 +3248,7 @@
       }
       ctx.globalAlpha = 1;
     }
-    if(state.map==='dungeon'){ drawEnemies(camX, camY); drawWaves(camX, camY); }
+    if(state.map==='dungeon'){ drawBossGround(camX, camY); drawEnemies(camX, camY); drawWaves(camX, camY); drawBossShots(camX, camY); }
     drawFishingSpot(camX, camY);
     drawPlayer(camX, camY);
     drawFishing(camX, camY);
@@ -3062,7 +3287,7 @@
     state.map = name;
     setMapSize(name);
     curLayout = MAP_LAYOUTS[name];
-    enemies = []; waves = []; invuln = 0; atkCool = 0;
+    enemies = []; waves = []; bossShots = []; hazards = []; invuln = 0; atkCool = 0;
     if(name==='north' && prev==='cave'){ state.px = 22.5; state.py = 3; state.dir = 'down'; }
     else if(name==='north'){ state.px = 26.5; state.py = ROWS-3; state.dir = 'up'; }
     else if(name==='dungeon'){ buildFloor(state.floor||1); state.px = DUNGEON_START.spawnX; state.py = DUNGEON_START.spawnY; state.dir = 'down'; state.hp = 10; spawnEnemies(); }
