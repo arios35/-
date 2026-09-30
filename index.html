@@ -69,7 +69,7 @@
     flex:1; font-size:1rem; padding:16px 8px; font-weight:bold; border-radius:12px;
   }
   #btnAction{ background:var(--accent2); color:#fff; border-color:var(--accent2); }
-  #btnSleep{ background:#5b6fa8; color:#fff; border-color:#5b6fa8; }
+  #btnSleep, #btnReturn{ background:#5b6fa8; color:#fff; border-color:#5b6fa8; }
   .shop{
     position:fixed; inset:0; background:rgba(0,0,0,0.5);
     display:none; align-items:center; justify-content:center; z-index:10;
@@ -141,6 +141,7 @@
       <div class="controls">
         <div class="big-row">
           <button class="big-btn" id="btnAction">⚡ アクション</button>
+          <button class="big-btn" id="btnReturn" style="display:none">🔙 帰還 500G</button>
         </div>
       </div>
     </div>
@@ -197,6 +198,16 @@
       <div class="shop-item"><span>素材をまとめて全部売る</span><button id="nsSellAll">売る</button></div>
       <p class="sub" id="northShopInfo" style="margin-top:8px;"></p>
       <button class="close-shop" id="closeNorthShop">閉じる</button>
+    </div>
+  </div>
+
+  <div class="shop" id="returnModal">
+    <div class="shop-box">
+      <h2>🔙 洞窟へ帰還</h2>
+      <p class="sub">500Gを払って、洞窟(ダンジョンの入口の前)に戻ります。手荷物はそのまま持ち帰れます。</p>
+      <div class="shop-item"><span>帰還する(500G)</span><button id="doReturn">払う</button></div>
+      <p class="sub" id="returnInfo" style="margin-top:8px;"></p>
+      <button class="close-shop" id="closeReturn">やめる</button>
     </div>
   </div>
 
@@ -1590,6 +1601,7 @@
   const MAP_NAMES = { home:'🏡 のんびり村', north:'⛰️ 北の山', river:'🏞️ 川の国', cave:'🕳️ 洞窟', dungeon:'⚔️ 地下ダンジョン' };
   function updateMapName(){
     document.getElementById('mapName').textContent = (MAP_NAMES[state.map] || '') + (state.map==='dungeon' ? ` 地下${state.floor||1}階` : '');
+    document.getElementById('btnReturn').style.display = state.map==='dungeon' ? '' : 'none';
   }
 
   // ---- Dungeon: 15 floors, enemies, bosses, sword, life ----
@@ -1793,6 +1805,23 @@
     save();
   }
   // Choosing where to start when going down from the cave (boss floors are checkpoints)
+  // Pay 500G to get back to the cave from anywhere in the dungeon
+  const RETURN_COST = 500;
+  function openReturn(){
+    if(state.map!=='dungeon') return;
+    document.getElementById('returnInfo').textContent = `所持金: ${state.gold}G`;
+    document.getElementById('returnModal').classList.add('open');
+  }
+  document.getElementById('closeReturn').onclick = ()=>document.getElementById('returnModal').classList.remove('open');
+  document.getElementById('doReturn').onclick = ()=>{
+    if(state.gold<RETURN_COST){ document.getElementById('returnInfo').textContent = `お金が足りないよ(${RETURN_COST}G必要)`; return; }
+    state.gold -= RETURN_COST;
+    document.getElementById('returnModal').classList.remove('open');
+    goMap('cave');
+    updateHud(); save();
+    setMsg(`${RETURN_COST}Gを払って洞窟に帰還した`);
+  };
+  document.getElementById('btnReturn').addEventListener('pointerdown', (e)=>{ e.preventDefault(); openReturn(); });
   function startDungeon(f){
     document.getElementById('floorModal').classList.remove('open');
     state.floor = f; goMap('dungeon');
@@ -2281,7 +2310,7 @@
     updateHud(); save();
   }
 
-  const DAY_SEC = 180;   // one in-game day = 3 real minutes
+  const DAY_SEC = 120;   // one in-game day = 2 real minutes
   function sleep(auto){
     const isRain = Math.random() < 0.3;
     Object.values(state.tiles).forEach(t=>{
@@ -3080,13 +3109,14 @@
     updateFishing(dt);
     updateCows(dt);
     updateSheep(dt);
-    if(!document.querySelector('.shop.open')){                 // the clock stops while a menu is open
+    const paused = !!document.querySelector('.shop.open');      // menus stop the clock and the dungeon
+    if(!paused){
       state.dayTime = (state.dayTime||0) + dt;
       if(state.dayTime >= DAY_SEC) sleep(true);
     }
     if(invuln>0) invuln = Math.max(0, invuln-dt);
     if(atkCool>0) atkCool = Math.max(0, atkCool-dt);
-    updateEnemies(dt);
+    if(!paused) updateEnemies(dt);
     draw();
     requestAnimationFrame(loop);
   }
