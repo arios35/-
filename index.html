@@ -201,6 +201,16 @@
     </div>
   </div>
 
+  <div class="shop" id="wellModal">
+    <div class="shop-box">
+      <h2>🪣 井戸</h2>
+      <p class="sub" id="wellDesc"></p>
+      <div id="wellList"></div>
+      <p class="sub" id="wellInfo" style="margin-top:8px;"></p>
+      <button class="close-shop" id="closeWell">閉じる</button>
+    </div>
+  </div>
+
   <div class="shop" id="returnModal">
     <div class="shop-box">
       <h2>🔙 洞窟へ帰還</h2>
@@ -388,6 +398,7 @@
   clearAround(layout,13,8,14,8,3);   // workbench
   clearAround(layout,13,4,13,4,2);   // NPC
   clearAround(layout,7,11,9,12,2);   // my house
+  layout[11][14]='k'; clearAround(layout,14,11,14,11,2);   // village well
   // Unbreakable border forest (2 tiles thick)
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
     if(x<2||y<2||x>=COLS-2||y>=ROWS-2) layout[y][x]='9';
@@ -451,6 +462,7 @@
   clearAround(NORTH,20,7,20,7,2);
   clearAround(NORTH,18,18,20,19,2);
   clearAround(NORTH,22,18,24,19,3);
+  NORTH[12][15]='k'; clearAround(NORTH,15,12,15,12,2);      // mountain well
   const treeKeysN = [];
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(NORTH[y][x]==='6') treeKeysN.push('n:'+x+','+y); }
   let curLayout = HOME;
@@ -500,6 +512,7 @@
   rput(23,17,'4'); rput(43,17,'4'); rput(6,16,'4'); rput(28,6,'4');   // villagers
   rput(44,5,'Y'); rput(40,26,'Y'); rput(5,30,'Y'); rput(30,4,'Y');   // treasure chests
   RIVER[0][3]='V'; RIVER[0][4]='V';
+  rput(6,20,'k'); clearAround(RIVER,6,20,6,20,2);           // river well
   clearAround(RIVER,6,13,8,14,3);
   for(const [nx,ny] of [[23,17],[43,17],[6,16],[28,6]]) clearAround(RIVER,nx,ny,nx,ny,3);
   for(const [cx,cy] of [[44,5],[40,26],[5,30],[30,4]]) clearAround(RIVER,cx,cy,cx,cy,1);
@@ -597,6 +610,7 @@
         for(const d of adj[i][j]){ const ni=i+DIRS[d][0], nj=j+DIRS[d][1], k=ni+','+nj; if(!seenB.has(k)){ seenB.add(k); qq.push([ni,nj]); } }
       }
     })();
+    CAVE[18][15] = 'k';                               // cave well: a corner of the entrance room (never blocks a passage)
     // Entrance tunnel from the south edge (leads back to the mountain)
     carve(15,20,16,21,'0'); carve(15,22,16,22,'3');
     CAVE[23][15]='Q'; CAVE[23][16]='Q';
@@ -711,7 +725,7 @@
     else { COLS = 32; ROWS = 24; }
   }
 
-  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A','D','Y','W','O']);
+  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A','D','Y','W','O','k']);
 
   let state = {
     px:6, py:5, dir:'down',
@@ -719,7 +733,7 @@
     selectedCrop:'wheat', eggs:0, toolLevel:1,
     wood:0, mikan:0, treeHits:{}, chopped:{}, fruit:null,
     stone:0, iron:0, goldOre:0, rockHits:{}, mined:{}, axeLevel:1, pickLevel:1, map:'home',
-    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, sword:false, enchant:{knock:0,wave:0,fire:0}, swordLevel:1, floor:1, bossDone:{}, mushroom:0, rodLevel:1, opened:{}, hp:10, stairsOpen:false, dayTime:0, chest:{counts:{}}, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
+    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, sword:false, wells:{home:false,north:false,river:false,cave:false}, wellsOpen:false, enchant:{knock:0,wave:0,fire:0}, swordLevel:1, floor:1, bossDone:{}, mushroom:0, rodLevel:1, opened:{}, hp:10, stairsOpen:false, dayTime:0, chest:{counts:{}}, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
     fish:{ minnow:0, ayu:0, carp:0, yamame:0, catfish:0 },
     chicken:{ fed:false, eggReady:false },
     tiles:{} // "x,y" -> {tilled, planted, growth, watered}
@@ -1107,6 +1121,7 @@
   
 
   function action(){
+    if(wellAnim) return;
     if(state.map==='dungeon'){ attackAction(); return; }
     const cur = tileAt(tileX(), tileY());
     if(cur==='1'){ farmAction(); return; }
@@ -1117,6 +1132,7 @@
     if(state.map==='home' && nearRanch()){ ranchAction(); return; }
     if(state.map==='home' && nearSheepRanch()){ sheepAction(); return; }
     if(nearType('O')){ openEnchant(); return; }
+    if(nearType('k')){ openWell(); return; }
     if(nearAny(GATE_CHARS)){ openGate(['G','Z','T','D'].find(c=>findNear(c))); return; }
     if(nearAny(HOUSE_CHARS)){ openSleep(); return; }
     if(nearAny(SITE_CHARS)){ openSite(); return; }
@@ -1482,6 +1498,127 @@
   function openEnchant(){ document.getElementById('enchantModal').classList.add('open'); renderEnchant(); }
   document.getElementById('closeEnchant').onclick = ()=>document.getElementById('enchantModal').classList.remove('open');
 
+  // ---- Wells: fast travel between wells (unlock once for 2000G) ----
+  const WELLS = { home:{x:14,y:11}, north:{x:15,y:12}, river:{x:6,y:20}, cave:{x:15,y:18} };
+  const WELL_COST = 2000;
+  const IN_HOP = 0.4, IN_SINK = 0.55, IN_FADE = 0.3, OUT_RISE = 0.5, OUT_HOP = 0.4, OUT_FADE = 0.3;
+  let wellAnim = null;        // the jump-in / climb-out cutscene
+  let curWell = null;         // the well the player is standing next to
+  function renderWell(msg){
+    const list = document.getElementById('wellList'); list.innerHTML = '';
+    const desc = document.getElementById('wellDesc'), here = state.map;
+    if(!state.wells[here]){
+      desc.textContent = `この井戸に${WELL_COST}Gを払うと解放されて、解放ずみの他の井戸と行き来できるようになります。`;
+      const row = document.createElement('div'); row.className = 'shop-item';
+      const span = document.createElement('span'); span.textContent = `この井戸を解放 ${WELL_COST}G`;
+      const b = document.createElement('button'); b.textContent = '払う'; b.onclick = payWell;
+      row.appendChild(span); row.appendChild(b); list.appendChild(row);
+    } else {
+      desc.textContent = '行き先を選ぶと、井戸に飛び込みます。行き先の井戸は、先に行って解放しておく必要があります。';
+      for(const name of Object.keys(WELLS)){
+        if(name===here) continue;
+        const row = document.createElement('div'); row.className = 'shop-item';
+        const span = document.createElement('span'); span.textContent = `${MAP_NAMES[name]}の井戸`;
+        row.appendChild(span);
+        if(state.wells[name]){
+          const b = document.createElement('button'); b.textContent = '行く'; b.onclick = ()=>startWellTravel(name);
+          row.appendChild(b);
+        } else {
+          const tag = document.createElement('small'); tag.textContent = '未解放'; row.appendChild(tag);
+        }
+        list.appendChild(row);
+      }
+    }
+    document.getElementById('wellInfo').textContent = msg || `所持金: ${state.gold}G`;
+  }
+  function openWell(){
+    curWell = findNear('k');
+    if(!curWell) return;
+    document.getElementById('wellModal').classList.add('open'); renderWell();
+  }
+  function payWell(){
+    if(state.wells[state.map]) return;
+    if(state.gold<WELL_COST){ renderWell(`お金が足りないよ(あと${WELL_COST-state.gold}G)`); return; }
+    state.gold -= WELL_COST; state.wells[state.map] = true; updateHud(); save();
+    renderWell('この井戸を解放した!');
+  }
+  document.getElementById('closeWell').onclick = ()=>document.getElementById('wellModal').classList.remove('open');
+  function startWellTravel(dest){
+    if(!state.wells[state.map] || !state.wells[dest] || !curWell || wellAnim || !WELLS[dest]) return;
+    document.getElementById('wellModal').classList.remove('open');
+    wellAnim = { phase:'in', t:0, dest, sx:state.px, sy:state.py, wx:curWell[0], wy:curWell[1], splashed:false };
+  }
+  function warpToWell(name){
+    state.map = name; setMapSize(name); curLayout = MAP_LAYOUTS[name];
+    enemies = []; waves = []; bossShots = []; hazards = []; invuln = 0; atkCool = 0;
+    effects = []; actionAnim = null; fishing.phase = 'idle';
+    const w = WELLS[name];
+    let land = [w.x, w.y+1];
+    for(const d of [[0,1],[1,0],[-1,0],[0,-1]]){
+      const x = w.x+d[0], y = w.y+d[1];
+      if(x>=0 && y>=0 && x<COLS && y<ROWS && !SOLID.has(tileAt(x,y))){ land = [x,y]; break; }
+    }
+    state.px = land[0]; state.py = land[1]; state.dir = 'down';
+    updateMapName();
+    setMsg(`${MAP_NAMES[name]}の井戸から出てきた`);
+    save();
+  }
+  function updateWell(dt){
+    const a = wellAnim; a.t += dt;
+    if(a.phase==='in'){
+      if(!a.splashed && a.t >= IN_HOP){ a.splashed = true; addEffect(a.wx, a.wy, 'water'); }
+      if(a.t >= IN_HOP + IN_SINK + IN_FADE){                          // the screen is black: pop out of the other well
+        warpToWell(a.dest);
+        const w = WELLS[a.dest];
+        wellAnim = { phase:'out', t:0, wx:w.x, wy:w.y, lx:state.px, ly:state.py, splashed:false, landed:false };
+      }
+    } else {
+      if(!a.splashed && a.t >= 0.12){ a.splashed = true; addEffect(a.wx, a.wy, 'water'); }
+      if(!a.landed && a.t >= OUT_RISE + OUT_HOP){ a.landed = true; addEffect(a.lx, a.ly, 'water'); }
+      if(a.t >= OUT_RISE + OUT_HOP + 0.05) wellAnim = null;
+    }
+  }
+  function wellFadeAlpha(){
+    if(!wellAnim) return 0;
+    const a = wellAnim;
+    if(a.phase==='in') return Math.max(0, Math.min(1, (a.t - (IN_HOP + IN_SINK*0.6)) / (IN_SINK*0.4 + IN_FADE)));
+    return Math.max(0, Math.min(1, 1 - a.t/OUT_FADE));
+  }
+  // The jump: hop onto the rim, sink behind the front wall (clipped at the rim); coming out is the reverse
+  function drawPlayerWell(camX, camY){
+    const a = wellAnim, scale = TILE/16, u = TILE/16;
+    const ease = q=> q<=0 ? 0 : q>=1 ? 1 : q*q*(3-2*q);
+    const Y0 = a.wy - 0.4625;                       // sprite top that puts the feet on the water line
+    let X, Y, clip = false, shadow = true;
+    if(a.phase==='in'){
+      if(a.t < IN_HOP){
+        const q = a.t/IN_HOP, e = ease(q);
+        X = a.sx + (a.wx-a.sx)*e; Y = a.sy + (Y0-a.sy)*e - Math.sin(q*Math.PI)*0.45;
+      } else {
+        const q = Math.min(1, (a.t-IN_HOP)/IN_SINK);
+        X = a.wx; Y = Y0 + ease(q)*1.1; clip = true; shadow = false;
+      }
+    } else if(a.t < OUT_RISE){
+      const q = a.t/OUT_RISE;
+      X = a.wx; Y = Y0 + (1-ease(q))*1.1; clip = true; shadow = false;
+    } else {
+      const q = Math.min(1, (a.t-OUT_RISE)/OUT_HOP), e = ease(q);
+      X = a.wx + (a.lx-a.wx)*e; Y = Y0 + (a.ly-Y0)*e - Math.sin(q*Math.PI)*0.6;
+    }
+    const px = (X-camX)*TILE, py = (Y-camY)*TILE;
+    if(shadow){
+      ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      ctx.beginPath(); ctx.ellipse(px+TILE/2, py+TILE-3, TILE*0.26, 3.5, 0, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.save();
+    if(clip){
+      const rim = (a.wy-camY)*TILE + 8.5*u;
+      ctx.beginPath(); ctx.rect((a.wx-camX)*TILE - TILE, -10000, TILE*3, rim + 10000); ctx.clip();
+    }
+    drawSprite(px, py, BOY_FRONT, PLAYER_PALETTE, scale, false);
+    ctx.restore();
+  }
+
   // ---- House construction site (north map) ----
   const SITE_COST = { gold:2500, wood:50, stone:40, iron:15 };
   const SITE_ICON = { gold:'💰', wood:'🪵', stone:'🪨', iron:'🔩' };
@@ -1619,7 +1756,7 @@
 
   // ---- Dungeon: 15 floors, enemies, bosses, sword, life ----
   let enemies = [];
-  let invuln = 0, atkCool = 0, stairLock = false;
+  let invuln = 0, atkCool = 0, stairLock = false, stairHold = 0;
   const ENEMY_DEFS = {
     slime:    { name:'スライム',   hp:2,  speed:1.4, chase:4.5 },
     bat:      { name:'コウモリ',   hp:1,  speed:2.3, chase:4.5 },
@@ -2975,6 +3112,18 @@
         ctx.fillStyle = '#a56b3a'; ctx.fillRect(px+2*u, py+2*u, 12*u, 3*u);
         ctx.fillStyle = '#e0b030'; ctx.fillRect(px+7*u, py+2*u, 2*u, 3*u);
       }
+    } else if(t==='k'){
+      ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16;
+      ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(px+8*u, py+14.2*u, 7.5*u, 2*u, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#8f8b84'; ctx.fillRect(px+1.5*u, py+7*u, 13*u, 7*u);                       // front wall
+      ctx.fillStyle = '#716d66'; ctx.fillRect(px+1.5*u, py+10*u, 13*u, 0.8*u); ctx.fillRect(px+1.5*u, py+12.6*u, 13*u, 0.8*u);
+      ctx.fillRect(px+5*u, py+7.8*u, 0.8*u, 2.2*u); ctx.fillRect(px+10*u, py+10.8*u, 0.8*u, 1.8*u);
+      ctx.fillStyle = '#b9b4aa'; ctx.beginPath(); ctx.ellipse(px+8*u, py+7*u, 6.8*u, 3.4*u, 0, 0, Math.PI*2); ctx.fill();   // rim
+      ctx.fillStyle = '#2f6fa8'; ctx.beginPath(); ctx.ellipse(px+8*u, py+7*u, 5*u, 2.4*u, 0, 0, Math.PI*2); ctx.fill();       // water
+      ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillRect(px+6*u, py+6.2*u, 2.5*u, 0.8*u);
+      ctx.fillStyle = '#8a5a34'; ctx.fillRect(px+11.5*u, py+3.5*u, 2.2*u, 2.6*u);                                              // bucket on the rim
+      ctx.fillStyle = '#5b3a1f'; ctx.fillRect(px+11.5*u, py+3.5*u, 2.2*u, 0.7*u);
     } else if(t==='O'){
       ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
       const u = TILE/16, g = (Math.sin(performance.now()/400 + wx)+1)/2;
@@ -3078,6 +3227,7 @@
   function triggerActionAnim(tool){ actionAnim = { start: performance.now(), tool: tool||'hoe' }; }
 
   function drawPlayer(camX, camY){
+    if(wellAnim){ drawPlayerWell(camX, camY); return; }
     const px = (state.px-camX)*TILE, py = (state.py-camY)*TILE;
     const tool = actionAnim ? actionAnim.tool : null;
     const overhead = !!tool && tool!=='hoe';        // axe / pickaxe / sword: swing down from overhead
@@ -3262,6 +3412,8 @@
     if(state.map==='dungeon' && invuln>0.55){
       ctx.fillStyle = `rgba(210,30,40,${(invuln-0.55)*0.45})`; ctx.fillRect(0,0,VIEW_COLS*TILE,VIEW_ROWS*TILE);
     }
+    const wfa = wellFadeAlpha();
+    if(wfa>0){ ctx.fillStyle = `rgba(0,0,0,${wfa})`; ctx.fillRect(0, 0, VIEW_COLS*TILE + TILE, VIEW_ROWS*TILE + TILE); }
     drawHearts();
     drawFloorLabel();
     drawBossBar();
@@ -3277,6 +3429,7 @@
   curLayout = MAP_LAYOUTS[state.map] || HOME;
   setMapSize(MAP_LAYOUTS[state.map] ? state.map : 'home');
   if(state.map==='dungeon'){ buildFloor(state.floor||1); spawnEnemies(); }
+  if(state.wellsOpen){ for(const k of Object.keys(WELLS)) state.wells[k] = true; state.wellsOpen = false; }   // old saves: everything was unlocked at once
   if(state.map!=='home' && collides(state.px, state.py)){ const m0 = state.map; state.map = 'home'; goMap(m0); }   // saved spot is inside a wall after a map change
   if(!state.fruit){ state.fruit = {}; for(const k of treeKeys.concat(treeKeysN, treeKeysR)) state.fruit[k] = Math.random()<0.25; }
   updateHud();
@@ -3319,9 +3472,11 @@
       if(keyVec.up) vy -= 1;
       if(keyVec.down) vy += 1;
     }
-    updatePosition(dt, vx, vy);
+    if(!wellAnim) updatePosition(dt, vx, vy);
+    if(wellAnim) updateWell(dt);
     const curT = tileAt(tileX(), tileY());
     if(curT!=='H') stairLock = false;
+    if(curT!=='L' && curT!=='K') stairHold = 0;
     if(curT==='u' && state.map==='home') goMap('north');
     else if(curT==='v' && state.map==='north') goMap('home');
     else if(curT==='U' && state.map==='home') goMap('river');
@@ -3329,8 +3484,15 @@
     else if(curT==='X' && state.map==='north') goMap('cave');
     else if(curT==='Q' && state.map==='cave') goMap('north');
     else if(curT==='H' && state.map==='cave'){ if(!stairLock){ stairLock = true; openFloorSelect(); } }
-    else if(curT==='L' && state.map==='dungeon'){ if((state.floor||1)<=1) goMap('cave'); else changeFloor(state.floor-1, false); }
-    else if(curT==='K' && state.map==='dungeon') changeFloor((state.floor||1)+1, true);
+    else if((curT==='L' || curT==='K') && state.map==='dungeon'){
+      stairHold += dt;                                   // stand on the stairs for a moment (being knocked onto them does nothing)
+      if(stairHold >= 0.5){
+        stairHold = 0;
+        if(curT==='K') changeFloor((state.floor||1)+1, true);
+        else if((state.floor||1)<=1) goMap('cave');
+        else changeFloor(state.floor-1, false);
+      }
+    }
     updateFishing(dt);
     updateCows(dt);
     updateSheep(dt);
