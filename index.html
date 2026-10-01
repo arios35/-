@@ -522,7 +522,7 @@
   for(let y=0;y<RROWS;y++) for(let x=0;x<RCOLS;x++){ if(RIVER[y][x]==='6') treeKeysR.push('r:'+x+','+y); }
 
   // ===== Cave area: a winding maze of narrow passages =====
-  const CAVE_STAIRS = {}, CAVE_TABLE = {};
+  const CAVE_STAIRS = {}, CAVE_TABLE = {}, CAVE_WELL = {};
   const CAVE = [];
   for(let y=0;y<ROWS;y++){ const row=[]; for(let x=0;x<COLS;x++) row.push('N'); CAVE.push(row); }
   (function buildCave(){
@@ -610,7 +610,15 @@
         for(const d of adj[i][j]){ const ni=i+DIRS[d][0], nj=j+DIRS[d][1], k=ni+','+nj; if(!seenB.has(k)){ seenB.add(k); qq.push([ni,nj]); } }
       }
     })();
-    CAVE[18][15] = 'k';                               // cave well: a corner of the entrance room (never blocks a passage)
+    // Cave well: inside the stairs room itself, on the tile next to the stairs (the room stays connected)
+    {
+      const sc = deadEnds.concat(others)[0], [rx,ry] = at(sc.i,sc.j);
+      if(sc.deg===1){
+        const WOFF = { N:[0,1], S:[1,0], E:[0,0], W:[1,1] }[adj[sc.i][sc.j][0]];
+        CAVE_WELL.x = rx+WOFF[0]; CAVE_WELL.y = ry+WOFF[1];
+      } else { CAVE_WELL.x = 15; CAVE_WELL.y = 18; }          // fallback: corner of the entrance room
+      CAVE[CAVE_WELL.y][CAVE_WELL.x] = 'k';
+    }
     // Entrance tunnel from the south edge (leads back to the mountain)
     carve(15,20,16,21,'0'); carve(15,22,16,22,'3');
     CAVE[23][15]='Q'; CAVE[23][16]='Q';
@@ -1132,7 +1140,8 @@
     if(state.map==='home' && nearRanch()){ ranchAction(); return; }
     if(state.map==='home' && nearSheepRanch()){ sheepAction(); return; }
     if(nearType('O')){ openEnchant(); return; }
-    if(nearType('k')){ openWell(); return; }
+    const wk = findNear('k'), gd = findNear('D');
+    if(wk && !(gd && gd[2] < wk[2])){ openWell(); return; }   // next to both the well and the locked stairs: the nearer one
     if(nearAny(GATE_CHARS)){ openGate(['G','Z','T','D'].find(c=>findNear(c))); return; }
     if(nearAny(HOUSE_CHARS)){ openSleep(); return; }
     if(nearAny(SITE_CHARS)){ openSite(); return; }
@@ -1499,7 +1508,7 @@
   document.getElementById('closeEnchant').onclick = ()=>document.getElementById('enchantModal').classList.remove('open');
 
   // ---- Wells: fast travel between wells (unlock once for 2000G) ----
-  const WELLS = { home:{x:14,y:11}, north:{x:15,y:12}, river:{x:6,y:20}, cave:{x:15,y:18} };
+  const WELLS = { home:{x:14,y:11}, north:{x:15,y:12}, river:{x:6,y:20}, cave:CAVE_WELL };
   const WELL_COST = 2000;
   const IN_HOP = 0.4, IN_SINK = 0.55, IN_FADE = 0.3, OUT_RISE = 0.5, OUT_HOP = 0.4, OUT_FADE = 0.3;
   let wellAnim = null;        // the jump-in / climb-out cutscene
@@ -1556,7 +1565,8 @@
     let land = [w.x, w.y+1];
     for(const d of [[0,1],[1,0],[-1,0],[0,-1]]){
       const x = w.x+d[0], y = w.y+d[1];
-      if(x>=0 && y>=0 && x<COLS && y<ROWS && !SOLID.has(tileAt(x,y))){ land = [x,y]; break; }
+      const tt = tileAt(x,y);
+      if(x>=0 && y>=0 && x<COLS && y<ROWS && !SOLID.has(tt) && !'HKLuvUVXQ'.includes(tt)){ land = [x,y]; break; }
     }
     state.px = land[0]; state.py = land[1]; state.dir = 'down';
     updateMapName();
