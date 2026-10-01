@@ -42,6 +42,8 @@
     padding:8px 14px; font-size:0.8rem; max-width:760px; width:100%;
   }
   .hud span{white-space:nowrap;}
+  .seed{padding:1px 5px; border-radius:7px; cursor:pointer; border:1.5px solid transparent;}
+  .seed.sel{background:var(--accent); color:#fff; border-color:var(--ink);}
   canvas{
     border:3px solid var(--ink); border-radius:8px; background:#4c7a3a;
     max-width:100%; touch-action:none;
@@ -122,7 +124,11 @@
     <div class="left-col">
       <div class="hud">
         <span>💰 <b id="gold">50</b> G</span>
-        <span id="seedInfo">🌾 <b id="seeds">3</b></span>
+        <span id="seedBox">
+          <span class="seed" data-crop="wheat">🌾 <b id="seed_wheat">3</b></span>
+          <span class="seed" data-crop="tomato">🍅 <b id="seed_tomato">0</b></span>
+          <span class="seed" data-crop="corn">🌽 <b id="seed_corn">0</b></span>
+        </span>
         <span>🥚 <b id="eggs">0</b></span>
         <span>🪵 <b id="wood">0</b></span>
         <span>🍊 <b id="mikan">0</b></span>
@@ -1069,8 +1075,10 @@
   function setMsg(t){ document.getElementById('msg').textContent = t; }
   function updateHud(){
     document.getElementById('gold').textContent = state.gold;
-    document.getElementById('seeds').textContent = state.seedsByType[state.selectedCrop];
-    document.getElementById('seedInfo').firstChild.textContent = CROPS[state.selectedCrop].emoji + ' ';
+    for(const k of Object.keys(CROPS)){                                   // every kind of seed stays visible; the highlighted one is planted
+      document.getElementById('seed_'+k).textContent = state.seedsByType[k]||0;
+      document.querySelector('.seed[data-crop="'+k+'"]').classList.toggle('sel', state.selectedCrop===k);
+    }
     document.getElementById('eggs').textContent = state.eggs;
     document.getElementById('wood').textContent = state.wood;
     document.getElementById('mikan').textContent = state.mikan;
@@ -2621,6 +2629,10 @@
   }
 
   function farmAction(){
+    if((state.seedsByType[state.selectedCrop]||0)<=0){
+      const other = Object.keys(CROPS).find(k=>(state.seedsByType[k]||0)>0);
+      if(other){ state.selectedCrop = other; setMsg(`${CROPS[other].label}の種に切りかえた${CROPS[other].emoji}`); updateHud(); }
+    }
     const offsets = state.toolLevel>=3 ? OFFSETS_3x3 : state.toolLevel>=2 ? OFFSETS_PLUS : OFFSETS_1;
     const results = [];
     for(const [dx,dy] of offsets){
@@ -2848,9 +2860,19 @@
   document.getElementById('nsSellAll').onclick = ()=>sellMats(Object.keys(MAT_PRICE));
   document.getElementById('closeNorthShop').onclick = ()=>document.getElementById('northShopModal').classList.remove('open');
 
+  document.querySelectorAll('.seed').forEach(el=>{
+    el.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      const k = el.dataset.crop;
+      state.selectedCrop = k; updateHud(); save();
+      setMsg(`${CROPS[k].label}の種を選んだ${CROPS[k].emoji}(植えるのはこの種)`);
+    });
+  });
+
   function inventorySummary(){
     const cropsStr = Object.keys(CROPS).map(k=>`${CROPS[k].emoji}${state.harvestedByType[k]||0}`).join(' ');
-    return `収穫物: ${cropsStr} / 🪵${state.wood} 🪨${state.stone} 🔩${state.iron} 🥇${state.goldOre||0} 🍊${state.mikan} 🥛${state.milk} 🧶${state.wool||0} 🍄${state.mushroom||0} 🐟${fishCount()} / 卵: ${state.eggs}個`;
+    const seedsStr = Object.keys(CROPS).map(k=>`${CROPS[k].emoji}${state.seedsByType[k]||0}`).join(' ');
+    return `種: ${seedsStr} / 収穫物: ${cropsStr} / 🪵${state.wood} 🪨${state.stone} 🔩${state.iron} 🥇${state.goldOre||0} 🍊${state.mikan} 🥛${state.milk} 🧶${state.wool||0} 🍄${state.mushroom||0} 🐟${fishCount()} / 卵: ${state.eggs}個`;
   }
 
   function openShop(){
