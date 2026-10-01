@@ -643,7 +643,7 @@
       DUNGEON_START.spawnX = cx; DUNGEON_START.spawnY = y0+h-2;
       Object.assign(DUNGEON_ARENA, { active:true, x0, y0, w, h, cx, cy:y0+3 });
       Object.assign(DUNGEON_STAIRS, { x:cx, y:y0, spawnX:cx, spawnY:y0+1 });
-      if(state.bossDone && state.bossDone[n]) DUNGEON[y0][cx] = 'K';
+      if(bossDefeated(n)) DUNGEON[y0][cx] = 'K';
       return;
     }
     const CW = 17, CH = 11;                      // 17 x 11 rooms
@@ -712,7 +712,7 @@
       Object.assign(DUNGEON_ARENA, { active:true, x0, y0, w, h, cx:x0+Math.floor(w/2), cy:y0+Math.floor(h/2) });
       const kx = x0+w-1, ky = y0;
       Object.assign(DUNGEON_STAIRS, { x:kx, y:ky, spawnX:kx-1, spawnY:ky });
-      if(state.bossDone && state.bossDone[n]) DUNGEON[ky][kx] = 'K';
+      if(bossDefeated(n)) DUNGEON[ky][kx] = 'K';
     } else {
       const [x,y] = at(target.i,target.j);
       const off = target.deg===1 ? FAR[adj[target.i][target.j][0]] : [1,1];
@@ -741,7 +741,7 @@
     selectedCrop:'wheat', eggs:0, toolLevel:1,
     wood:0, mikan:0, treeHits:{}, chopped:{}, fruit:null,
     stone:0, iron:0, goldOre:0, rockHits:{}, mined:{}, axeLevel:1, pickLevel:1, map:'home',
-    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, sword:false, wells:{home:false,north:false,river:false,cave:false}, wellsOpen:false, enchant:{knock:0,wave:0,fire:0}, swordLevel:1, floor:1, bossDone:{}, mushroom:0, rodLevel:1, opened:{}, hp:10, stairsOpen:false, dayTime:0, chest:{counts:{}}, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
+    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, sword:false, wells:{home:false,north:false,river:false,cave:false}, wellsOpen:false, enchant:{knock:0,wave:0,fire:0}, swordLevel:1, floor:1, bossDone:{}, bossBeaten:{}, mushroom:0, rodLevel:1, opened:{}, hp:10, stairsOpen:false, dayTime:0, chest:{counts:{}}, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
     fish:{ minnow:0, ayu:0, carp:0, yamame:0, catfish:0 },
     chicken:{ fed:false, eggReady:false },
     tiles:{} // "x,y" -> {tilled, planted, growth, watered}
@@ -1813,6 +1813,16 @@
     const d = ENEMY_DEFS[kind];
     return { kind, x, y, hp:d.hp, maxhp:d.hp, vx:0, vy:0, t:Math.random(), hurt:0, face:1, r:0.72, scale:1 };
   }
+  // A boss stays down for 3 days, then comes back
+  const BOSS_RESPAWN_DAYS = 3;
+  function bossDefeated(f){
+    state.bossDone = state.bossDone || {};
+    const d = state.bossDone[f];
+    if(d===undefined) return false;
+    if(d===true){ state.bossDone[f] = state.day; return true; }          // old save: count from today
+    if(state.day - d >= BOSS_RESPAWN_DAYS){ delete state.bossDone[f]; return false; }
+    return true;
+  }
   function makeBoss(f){
     const b = BOSS_FLOORS[f], e = makeEnemy(b.kind, DUNGEON_ARENA.cx, DUNGEON_ARENA.cy);
     e.boss = true; e.name = b.name; e.hp = e.maxhp = b.hp; e.speed = b.speed; e.scale = b.scale;
@@ -1824,7 +1834,7 @@
     enemies = [];
     const f = state.floor||1, kinds = TIER_KINDS[floorTier(f)], boss = BOSS_FLOORS[f];
     if(boss){                                                    // boss floor: just you and the boss
-      if(!(state.bossDone && state.bossDone[f])) enemies.push(makeBoss(f));
+      if(!bossDefeated(f)) enemies.push(makeBoss(f));
       return;
     }
     const rooms = DUNGEON_ROOMS.filter(r=>r.d>=3);
@@ -1868,7 +1878,8 @@
     if(killAcc.ore) msg += ` 金鉱石+${killAcc.ore}`;
     if(killAcc.boss){
       const f = state.floor||1;
-      state.bossDone = state.bossDone || {}; state.bossDone[f] = true;
+      state.bossDone = state.bossDone || {}; state.bossDone[f] = state.day;                   // respawns 3 days later
+      state.bossBeaten = state.bossBeaten || {}; state.bossBeaten[f] = true;                 // (checkpoint stays unlocked)
       if(f<15){ DUNGEON[DUNGEON_STAIRS.y][DUNGEON_STAIRS.x] = 'K'; msg += ' 下への階段が現れた!'; }
       else msg += ' ダンジョンを制覇した!';
     }
@@ -2159,7 +2170,7 @@
     spawnEnemies();
     updateMapName();
     fadeStart = performance.now();
-    const bossHere = BOSS_FLOORS[n] && !(state.bossDone && state.bossDone[n]);
+    const bossHere = BOSS_FLOORS[n] && !bossDefeated(n);
     setMsg(bossHere ? `地下${n}階…強い気配がする…!` : `地下${n}階`);
     save();
   }
@@ -2187,7 +2198,7 @@
   }
   function openFloorSelect(){
     const opts = [1];
-    for(const b of [3,6,9,12]) if(state.bossDone && state.bossDone[b]) opts.push(b+1);
+    for(const b of [3,6,9,12]) if(state.bossBeaten && state.bossBeaten[b]) opts.push(b+1);
     if(opts.length===1){ startDungeon(1); return; }
     const list = document.getElementById('floorList'); list.innerHTML = '';
     for(const f of opts){
@@ -3439,6 +3450,8 @@
   curLayout = MAP_LAYOUTS[state.map] || HOME;
   setMapSize(MAP_LAYOUTS[state.map] ? state.map : 'home');
   if(state.map==='dungeon'){ buildFloor(state.floor||1); spawnEnemies(); }
+  state.bossBeaten = state.bossBeaten || {};
+  for(const k of Object.keys(state.bossDone||{})) state.bossBeaten[k] = true;                // old saves: keep their checkpoints
   if(state.wellsOpen){ for(const k of Object.keys(WELLS)) state.wells[k] = true; state.wellsOpen = false; }   // old saves: everything was unlocked at once
   if(state.map!=='home' && collides(state.px, state.py)){ const m0 = state.map; state.map = 'home'; goMap(m0); }   // saved spot is inside a wall after a map change
   if(!state.fruit){ state.fruit = {}; for(const k of treeKeys.concat(treeKeysN, treeKeysR)) state.fruit[k] = Math.random()<0.25; }
