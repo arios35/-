@@ -161,9 +161,45 @@
   for(const [nx,ny] of [[23,17],[43,17],[6,16],[28,6]]) clearAround(RIVER,nx,ny,nx,ny,3);
   for(const [cx,cy] of [[44,5],[40,26],[5,30],[30,4]]) clearAround(RIVER,cx,cy,cx,cy,1);
   clearAround(RIVER,3,2,4,2,2);
+  rfr(22,31,23,31,'3');                         // road down to the south gate
+  RIVER[32][22]='J'; RIVER[32][23]='J';         // toll gate to the coast (between the border trees)
+  RIVER[33][22]='I'; RIVER[33][23]='I';         // exit down to the coast
+  clearAround(RIVER,22,31,23,32,2);
   const FISH_SPOTS = [[21,19],[40,19]];   // pier entrances (the rod marker is drawn here)
   const treeKeysR = [];
   for(let y=0;y<RROWS;y++) for(let x=0;x<RCOLS;x++){ if(RIVER[y][x]==='6') treeKeysR.push('r:'+x+','+y); }
+
+  // ===== Coast area (the southern end of the world): beach & sea along the south and west sides =====
+  const CCOLS = 40, CROWS = 30;
+  const COAST = [];
+  for(let y=0;y<CROWS;y++){ const row=[]; for(let x=0;x<CCOLS;x++) row.push('0'); COAST.push(row); }
+  function cfr(x0,y0,x1,y1,ch){ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){ if(COAST[y] && COAST[y][x]!==undefined) COAST[y][x]=ch; } }
+  const cput = (x,y,ch)=>{ COAST[y][x] = ch; };
+  const wSea = y => 4 + Math.round(1.3*Math.sin(y*0.55));              // west shoreline: x <= this is sea
+  const sSea = x => CROWS-6 + Math.round(1.3*Math.sin(x*0.45+1));      // south shoreline: y >= this is sea
+  for(let y=0;y<CROWS;y++) for(let x=0;x<CCOLS;x++){
+    if(x<=wSea(y) || y>=sSea(x)) COAST[y][x]='7';                      // sea
+    else if(x<=wSea(y)+3 || y>=sSea(x)-3) COAST[y][x]='t';            // sand beach
+    else if((x*7+y*13)%11===0) COAST[y][x]='6';
+    else if((x*5+y*11)%23===0) COAST[y][x]='g';
+    else if((x*11+y*3)%17===0) COAST[y][x]='P';                        // wild mushrooms
+  }
+  for(let y=0;y<CROWS;y++) for(let x=0;x<CCOLS;x++){
+    if((x>=CCOLS-2 || y<2) && COAST[y][x]!=='7') COAST[y][x]='9';     // north / east: unbreakable forest
+  }
+  cfr(20,1,21,13,'3');                       // road from the gate down to the village green
+  cfr(12,12,28,13,'3');                      // east-west street
+  cfr(12,12,13,19,'3');                      // road toward the west beach
+  cfr(27,12,28,19,'3');                      // road toward the south-east beach
+  COAST[0][20]='z'; COAST[0][21]='z';        // back to the river area
+  cput(23,6,'4');                            // villager
+  cput(17,9,'k');                            // coast well
+  cput(9,6,'Y'); cput(30,21,'Y'); cput(8,21,'Y');   // treasure chests
+  for(const [nx,ny] of [[23,6],[17,9]]) clearAround(COAST,nx,ny,nx,ny,2);
+  for(const [cx,cy] of [[9,6],[30,21],[8,21]]) clearAround(COAST,cx,cy,cx,cy,1);
+  clearAround(COAST,20,2,21,2,2);
+  const treeKeysC = [];
+  for(let y=0;y<CROWS;y++) for(let x=0;x<CCOLS;x++){ if(COAST[y][x]==='6') treeKeysC.push('s:'+x+','+y); }
 
   // ===== Cave area: a winding maze of narrow passages =====
   const CAVE_STAIRS = {}, CAVE_TABLE = {}, CAVE_WELL = {};
