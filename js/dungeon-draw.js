@@ -79,6 +79,67 @@
     ctx.fillStyle = flash ? '#ffffff' : '#a4a8b0'; ctx.fillRect(cx+10*s, by-27*s, 6*s, 6*s);
     return by - 27*s;
   }
+  function drawGolem(cx,by,s,flash,t,ex){
+    const rock = flash ? '#ffffff' : '#8d939c', dark = flash ? '#dddddd' : '#6b7079', sw = Math.sin(t*5 + ex)*1.2*s;
+    ctx.fillStyle = dark;
+    ctx.fillRect(cx-6*s, by-7*s+sw, 5*s, 7*s-sw); ctx.fillRect(cx+1*s, by-7*s-sw, 5*s, 7*s+sw);        // legs
+    ctx.fillStyle = rock; ctx.fillRect(cx-9*s, by-22*s, 18*s, 16*s);                                      // torso
+    ctx.fillStyle = dark; ctx.fillRect(cx-9*s, by-9*s, 18*s, 3*s); ctx.fillRect(cx-3*s, by-20*s, 2*s, 6*s);
+    ctx.fillStyle = rock; ctx.fillRect(cx-14*s, by-21*s, 5*s, 14*s); ctx.fillRect(cx+9*s, by-21*s, 5*s, 14*s);   // arms
+    ctx.fillStyle = dark; ctx.fillRect(cx-14*s, by-9*s, 5*s, 3*s); ctx.fillRect(cx+9*s, by-9*s, 5*s, 3*s);        // fists
+    ctx.fillStyle = rock; ctx.fillRect(cx-5*s, by-29*s, 10*s, 8*s);                                       // head
+    if(!flash){ ctx.fillStyle = '#5f8f4a'; ctx.fillRect(cx-9*s, by-22*s, 6*s, 2*s); ctx.fillRect(cx+2*s, by-29*s, 3*s, 2*s); }   // moss
+    ctx.fillStyle = flash ? '#ffffff' : '#ffb040'; ctx.fillRect(cx-3.5*s, by-26*s, 2.5*s, 2*s); ctx.fillRect(cx+1*s, by-26*s, 2.5*s, 2*s);
+    return by - 29*s;
+  }
+  function drawScorpion(cx,by,s,flash,t,ex){
+    const body = flash ? '#ffffff' : '#a4452e', dark = flash ? '#dddddd' : '#7a2f20', lg = Math.sin(t*14 + ex)*1.5*s, tw = Math.sin(t*4 + ex)*1.2*s;
+    ctx.fillStyle = dark;
+    for(let i=0;i<3;i++){ const o = (i%2 ? lg : -lg); ctx.fillRect(cx-6*s+i*5*s, by-5*s, 1.5*s, 5*s+o); }   // legs
+    ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(cx, by-8*s, 10*s, 5*s, 0, 0, Math.PI*2); ctx.fill();   // body
+    ctx.fillStyle = dark; ctx.fillRect(cx-3*s, by-12.5*s, 1.5*s, 9*s); ctx.fillRect(cx+2*s, by-12.5*s, 1.5*s, 9*s);
+    ctx.fillStyle = body;                                                                                        // tail
+    ctx.fillRect(cx-12*s, by-11*s, 3*s, 3*s); ctx.fillRect(cx-14*s, by-15*s, 3*s, 4*s);
+    ctx.fillRect(cx-13*s, by-19*s+tw, 3*s, 4*s); ctx.fillRect(cx-10*s, by-22*s+tw, 4*s, 3*s);
+    ctx.fillStyle = flash ? '#ffffff' : '#f2e04a';
+    ctx.beginPath(); ctx.moveTo(cx-6*s, by-22*s+tw); ctx.lineTo(cx-2.5*s, by-19*s+tw); ctx.lineTo(cx-6.5*s, by-18.5*s+tw); ctx.closePath(); ctx.fill();   // stinger
+    ctx.fillStyle = body; ctx.fillRect(cx+8*s, by-12*s, 5*s, 2*s);                                               // arm
+    ctx.fillRect(cx+12*s, by-14.5*s, 3*s, 2.5*s); ctx.fillRect(cx+12*s, by-10*s, 3*s, 2.5*s);                    // pincers
+    ctx.fillStyle = '#1a1a22'; ctx.fillRect(cx+5*s, by-12*s, 1.5*s, 1.5*s); ctx.fillRect(cx+7.5*s, by-10.5*s, 1.5*s, 1.5*s);
+    return by - 22*s;
+  }
+  function drawDemon(cx,by,s,flash,t,ex){
+    const skin = flash ? '#ffffff' : '#a8324a', dark = flash ? '#dddddd' : '#6d1f33', sw = Math.sin(t*9 + ex)*1.5*s, fl = Math.sin(t*8 + ex)*3*s;
+    ctx.fillStyle = dark;                                                                                        // wings
+    ctx.beginPath(); ctx.moveTo(cx-4*s, by-18*s); ctx.lineTo(cx-15*s, by-27*s+fl); ctx.lineTo(cx-12*s, by-14*s); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(cx+4*s, by-18*s); ctx.lineTo(cx+15*s, by-27*s+fl); ctx.lineTo(cx+12*s, by-14*s); ctx.closePath(); ctx.fill();
+    ctx.fillRect(cx-4*s, by-6*s+sw, 3*s, 6*s-sw); ctx.fillRect(cx+1*s, by-6*s-sw, 3*s, 6*s+sw);                  // legs
+    ctx.fillStyle = skin; ctx.fillRect(cx-5*s, by-18*s, 10*s, 12*s);                                             // torso
+    ctx.fillRect(cx-8*s, by-17*s, 3*s, 8*s); ctx.fillRect(cx+5*s, by-17*s, 3*s, 8*s);                            // arms
+    ctx.fillRect(cx-4*s, by-25*s, 8*s, 7*s);                                                                     // head
+    ctx.fillStyle = flash ? '#ffffff' : '#f0e0b0';                                                               // horns
+    ctx.beginPath(); ctx.moveTo(cx-4*s, by-24*s); ctx.lineTo(cx-6*s, by-30*s); ctx.lineTo(cx-1.5*s, by-25*s); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(cx+4*s, by-24*s); ctx.lineTo(cx+6*s, by-30*s); ctx.lineTo(cx+1.5*s, by-25*s); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffe14a'; ctx.fillRect(cx-3*s, by-22*s, 2*s, 1.5*s); ctx.fillRect(cx+1*s, by-22*s, 2*s, 1.5*s);
+    ctx.fillStyle = '#6b4a2a'; ctx.fillRect(cx+9*s, by-26*s, 1.5*s, 18*s);                                       // trident
+    ctx.fillStyle = flash ? '#ffffff' : '#c8ccd4';
+    ctx.fillRect(cx+7.5*s, by-29*s, 1.2*s, 4*s); ctx.fillRect(cx+9.1*s, by-30*s, 1.2*s, 5*s); ctx.fillRect(cx+10.7*s, by-29*s, 1.2*s, 4*s); ctx.fillRect(cx+7.5*s, by-26*s, 4.4*s, 1.2*s);
+    return by - 30*s;
+  }
+  function drawDragon(cx,by,s,flash,t,ex){
+    const sc = flash ? '#ffffff' : '#c2402e', dk = flash ? '#dddddd' : '#8a2a1f', belly = flash ? '#eeeeee' : '#f0c27a', sw = Math.sin(t*8 + ex)*1.5*s, fl = Math.sin(t*7 + ex)*3*s;
+    ctx.fillStyle = dk;                                                                                          // wing
+    ctx.beginPath(); ctx.moveTo(cx-2*s, by-16*s); ctx.lineTo(cx-10*s, by-28*s+fl); ctx.lineTo(cx+2*s, by-24*s+fl*0.5); ctx.lineTo(cx+6*s, by-16*s); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = sc; ctx.beginPath(); ctx.moveTo(cx-6*s, by-12*s); ctx.lineTo(cx-15*s, by-8*s+sw); ctx.lineTo(cx-6*s, by-8*s); ctx.closePath(); ctx.fill();   // tail
+    ctx.fillStyle = dk; ctx.fillRect(cx-5*s, by-6*s+sw, 3*s, 6*s-sw); ctx.fillRect(cx+3*s, by-6*s-sw, 3*s, 6*s+sw);   // legs
+    ctx.fillStyle = sc; ctx.fillRect(cx-7*s, by-17*s, 15*s, 11*s);                                               // body
+    ctx.fillStyle = belly; ctx.fillRect(cx-4*s, by-10*s, 10*s, 4*s);
+    ctx.fillStyle = sc; ctx.fillRect(cx+5*s, by-22*s, 4*s, 7*s); ctx.fillRect(cx+5*s, by-26*s, 9*s, 6*s); ctx.fillRect(cx+12*s, by-24*s, 4*s, 3*s);   // neck, head, snout
+    ctx.fillStyle = flash ? '#ffffff' : '#f0e0b0'; ctx.fillRect(cx+6*s, by-29*s, 1.5*s, 3*s); ctx.fillRect(cx+9*s, by-29*s, 1.5*s, 3*s);   // horns
+    ctx.fillStyle = '#ffe14a'; ctx.fillRect(cx+10*s, by-25*s, 2*s, 2*s);
+    ctx.fillStyle = dk; for(let i=0;i<4;i++) ctx.fillRect(cx-6*s+i*4*s, by-19*s, 2*s, 2*s);                       // back spikes
+    return by - 29*s;
+  }
   function drawCrown(cx, top, s){
     const k = s*0.8;
     ctx.fillStyle = '#f2c230';
@@ -103,7 +164,7 @@
         ctx.beginPath(); ctx.ellipse(cx, by, TILE*0.5*s, 5*s, 0, 0, Math.PI*2); ctx.stroke();
       }
       ctx.save();
-      if(e.face<0 && (e.kind==='skeleton' || e.kind==='goblin' || e.kind==='orc')){   // mirror the ones holding a weapon
+      if(e.face<0 && (e.kind==='skeleton' || e.kind==='goblin' || e.kind==='orc' || e.kind==='scorpion' || e.kind==='demon' || e.kind==='dragon')){   // mirror the ones holding a weapon
         ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.translate(-cx, 0);
       }
       let top = by;
@@ -112,7 +173,11 @@
       else if(e.kind==='ghost') top = drawGhost(cx,bb,s,flash,t,e.x);
       else if(e.kind==='skeleton') top = drawSkeleton(cx,bb,s,flash,t,e.x);
       else if(e.kind==='goblin') top = drawGoblin(cx,bb,s,flash,t,e.x);
-      else top = drawOrc(cx,bb,s,flash,t,e.x);
+      else if(e.kind==='orc') top = drawOrc(cx,bb,s,flash,t,e.x);
+      else if(e.kind==='golem') top = drawGolem(cx,bb,s,flash,t,e.x);
+      else if(e.kind==='scorpion') top = drawScorpion(cx,bb,s,flash,t,e.x);
+      else if(e.kind==='demon') top = drawDemon(cx,bb,s,flash,t,e.x);
+      else top = drawDragon(cx,bb,s,flash,t,e.x);
       ctx.restore();
       if(e.burnT>0){                                              // flames on burning enemies
         const fl = Math.sin(t*20 + e.x*5)*2*s;
