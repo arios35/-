@@ -7,7 +7,7 @@
   for(const k of Object.keys(state.bossDone||{})) state.bossBeaten[k] = true;                // old saves: keep their checkpoints
   if(state.wellsOpen){ for(const k of Object.keys(WELLS)) state.wells[k] = true; state.wellsOpen = false; }   // old saves: everything was unlocked at once
   if(state.map!=='home' && collides(state.px, state.py)){ const m0 = state.map; state.map = 'home'; goMap(m0); }   // saved spot is inside a wall after a map change
-  if(!state.fruit){ state.fruit = {}; for(const k of treeKeys.concat(treeKeysN, treeKeysR)) state.fruit[k] = Math.random()<0.25; }
+  if(!state.fruit){ state.fruit = {}; for(const k of treeKeys.concat(treeKeysN, treeKeysR, treeKeysC)) state.fruit[k] = Math.random()<0.25; }
   updateHud();
   updateMapName();
 
@@ -22,6 +22,8 @@
     else if(name==='dungeon'){ buildFloor(state.floor||1); state.px = DUNGEON_START.spawnX; state.py = DUNGEON_START.spawnY; state.dir = 'down'; state.hp = 10; spawnEnemies(); }
     else if(name==='cave' && prev==='dungeon'){ state.px = CAVE_STAIRS.spawnX; state.py = CAVE_STAIRS.spawnY; state.dir = 'down'; }
     else if(name==='cave'){ state.px = 15.5; state.py = ROWS-3; state.dir = 'up'; }
+    else if(name==='coast'){ state.px = 20.5; state.py = 2; state.dir = 'down'; }
+    else if(name==='river' && prev==='coast'){ state.px = 22.5; state.py = ROWS-3; state.dir = 'up'; }
     else if(name==='river'){ state.px = 3.5; state.py = 2; state.dir = 'down'; }
     else if(prev==='river'){ state.px = 3.5; state.py = ROWS-3; state.dir = 'up'; }
     else { state.px = 26.5; state.py = 2; state.dir = 'down'; }
@@ -31,6 +33,7 @@
     setMsg(name==='dungeon' ? `🪜 地下${state.floor||1}階に来た!敵を倒して進もう(アクションで剣を振る)`
          : name==='cave' ? '🕳️ 洞窟に来た!暗いけど、岩から鉄がよく出るみたい'
          : name==='north' ? '⛰️ 北の山に来た!岩が鉄を含みやすいみたい'
+         : name==='coast' ? '🏖️ 南の海岸に来た!潮風が気持ちいい'
          : name==='river' ? '🏞️ 川の国に来た!広い!釣りは2つの桟橋でできるよ🎣'
          : '🏡 村に戻ってきた');
     save();
@@ -57,6 +60,8 @@
     else if(curT==='v' && state.map==='north') goMap('home');
     else if(curT==='U' && state.map==='home') goMap('river');
     else if(curT==='V' && state.map==='river') goMap('home');
+    else if(curT==='I' && state.map==='river') goMap('coast');
+    else if(curT==='z' && state.map==='coast') goMap('river');
     else if(curT==='X' && state.map==='north') goMap('cave');
     else if(curT==='Q' && state.map==='cave') goMap('north');
     else if(curT==='H' && state.map==='cave'){ if(!stairLock){ stairLock = true; openFloorSelect(); } }
