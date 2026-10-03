@@ -15,8 +15,12 @@
     ghost:    { name:'ゴースト',   hp:4,  speed:1.3, chase:5.5, phase:true },   // floats through walls
     goblin:   { name:'ゴブリン',   hp:8,  speed:2.0, chase:5.5 },
     orc:      { name:'オーク',     hp:12, speed:1.5, chase:5 },
+    golem:    { name:'ゴーレム',   hp:20, speed:1.1, chase:5 },
+    scorpion: { name:'サソリ',     hp:14, speed:2.2, chase:5.5 },
+    demon:    { name:'デーモン',   hp:28, speed:1.9, chase:6 },
+    dragon:   { name:'ドラゴン',   hp:40, speed:1.6, chase:6 },
   };
-  const TIER_KINDS = { 1:['slime','bat'], 2:['skeleton','ghost'], 3:['goblin','orc'] };
+  const TIER_KINDS = { 1:['slime','bat'], 2:['skeleton','ghost'], 3:['goblin','orc'], 4:['golem','scorpion'], 5:['demon','dragon'] };
   // Attack building blocks. Every attack = telegraph (wind) -> attack (act) -> recover (the opening!)
   const ATTACK_DEFS = {
     dash:     { label:'突進',       wind:0.9, speed:9,  dur:0.55, recover:1.5 },
@@ -44,12 +48,28 @@
     15: { kind:'orc',      name:'オークキング',       hp:520, speed:1.7, scale:2.3, gold:2500, shot:'#ff9b3a',
           atks:  [{t:'dash',speed:9.5},{t:'ring',radius:3.2},{t:'leap',radius:2.1},{t:'fan',count:3,speed:6},{t:'summon',count:3}],
           atks2: [{t:'rain',count:10},{t:'nova',count:12,speed:4.6}] },
+    18: { kind:'goblin',   name:'ゴブリンキング',     hp:700,  speed:2.1, scale:2.2, gold:3500,  shot:'#8fe06a',
+          atks:  [{t:'dash',speed:10},{t:'fan',count:5,spread:1.1,speed:6},{t:'leap',radius:2.0},{t:'summon',count:3}],
+          atks2: [{t:'rain',count:10},{t:'nova',count:12,speed:4.8},{t:'dash',speed:12,wind:0.65}] },
+    21: { kind:'golem',    name:'ストーンゴーレム',   hp:950,  speed:1.3, scale:2.4, gold:5000,  shot:'#b7b0a0',
+          atks:  [{t:'ring',radius:3.4},{t:'leap',radius:2.4},{t:'dash',speed:8.5},{t:'summon',count:2}],
+          atks2: [{t:'rain',count:12,radius:1.2},{t:'ring',radius:3.9,wind:0.8}] },
+    24: { kind:'scorpion', name:'デススコーピオン', hp:1200, speed:2.3, scale:2.1, gold:7000,  shot:'#b8e04a',
+          atks:  [{t:'dash',speed:12,dur:0.6,wind:0.7},{t:'fan',count:7,spread:1.3,speed:6},{t:'rain',count:10}],
+          atks2: [{t:'nova',count:14,speed:4.8},{t:'dash',speed:13.5,dur:0.7,wind:0.55}] },
+    27: { kind:'demon',    name:'デーモンロード',     hp:1500, speed:1.9, scale:2.2, gold:9500,  shot:'#ff4a6a',
+          atks:  [{t:'teleport'},{t:'fan',count:7,spread:1.2,speed:6},{t:'nova',count:14,speed:5},{t:'summon',count:3},{t:'ring',radius:3.2}],
+          atks2: [{t:'rain',count:12},{t:'ring',radius:3.6,wind:0.7}] },
+    30: { kind:'dragon',   name:'ドラゴンロード',     hp:2200, speed:1.9, scale:2.6, gold:20000, shot:'#ff7a2a',
+          atks:  [{t:'dash',speed:11},{t:'nova',count:16,speed:5},{t:'fan',count:9,spread:1.5,speed:6.5},{t:'leap',radius:2.6},{t:'ring',radius:3.6},{t:'summon',count:3}],
+          atks2: [{t:'rain',count:14,radius:1.3,delay:0.9},{t:'nova',count:20,speed:5.2},{t:'dash',speed:14,wind:0.6}] },
   };
-  const DUNGEON_GROUND = { 1:'#57526a', 2:'#4b5866', 3:'#5d5246' };
+  const MAX_FLOOR = 30;                                       // 最下層(ここのボスを倒すと制覇)
+  const DUNGEON_GROUND = { 1:'#57526a', 2:'#4b5866', 3:'#5d5246', 4:'#4e5a4c', 5:'#5a3f45' };
   const SWORD_DMG = [1,2,3,5,8];
   const SWORD_CD = [0.35,0.32,0.28,0.25,0.22];
   const SWORD_COLORS = ['#dfe5ee','#9fd8ff','#8fe0a8','#ffd45a','#ff8ae0'];
-  function floorTier(f){ return f<=6 ? 1 : f<=12 ? 2 : 3; }   // floors 1-6 slime/bat, 7-12 skeleton/ghost, 13-15 goblin/orc
+  function floorTier(f){ return f<=6 ? 1 : f<=12 ? 2 : f<=18 ? 3 : f<=24 ? 4 : 5; }   // 1-6 slime/bat, 7-12 skeleton/ghost, 13-18 goblin/orc, 19-24 golem/scorpion, 25-30 demon/dragon
   function makeEnemy(kind,x,y){
     const d = ENEMY_DEFS[kind];
     return { kind, x, y, hp:d.hp, maxhp:d.hp, vx:0, vy:0, t:Math.random(), hurt:0, face:1, r:0.72, scale:1 };
@@ -121,7 +141,7 @@
       const f = state.floor||1;
       state.bossDone = state.bossDone || {}; state.bossDone[f] = state.day;                   // respawns 3 days later
       state.bossBeaten = state.bossBeaten || {}; state.bossBeaten[f] = true;                 // (checkpoint stays unlocked)
-      if(f<15){ DUNGEON[DUNGEON_STAIRS.y][DUNGEON_STAIRS.x] = 'K'; msg += ' 下への階段が現れた!'; }
+      if(f<MAX_FLOOR){ DUNGEON[DUNGEON_STAIRS.y][DUNGEON_STAIRS.x] = 'K'; msg += ' 下への階段が現れた!'; }
       else msg += ' ダンジョンを制覇した!';
     }
     killAcc.n = 0; killAcc.gain = 0; killAcc.ore = 0; killAcc.name = ''; killAcc.boss = null;
