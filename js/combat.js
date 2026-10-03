@@ -121,7 +121,7 @@
   }
   function openFloorSelect(){
     const opts = [1];
-    for(const b of [3,6,9,12]) if(state.bossBeaten && state.bossBeaten[b]) opts.push(b+1);
+    for(const b of Object.keys(BOSS_FLOORS).map(Number).filter(b=>b<MAX_FLOOR)) if(state.bossBeaten && state.bossBeaten[b]) opts.push(b+1);
     if(opts.length===1){ startDungeon(1); return; }
     const list = document.getElementById('floorList'); list.innerHTML = '';
     for(const f of opts){
