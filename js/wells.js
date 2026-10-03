@@ -1,5 +1,5 @@
   // ---- Wells: fast travel between wells (unlock once for 2000G) ----
-  const WELLS = { home:{x:14,y:11}, north:{x:15,y:12}, river:{x:6,y:20}, cave:CAVE_WELL };
+  const WELLS = { home:{x:14,y:11}, north:{x:15,y:12}, river:{x:6,y:20}, coast:{x:17,y:9}, cave:CAVE_WELL };
   const WELL_COST = 2000;
   const IN_HOP = 0.4, IN_SINK = 0.55, IN_FADE = 0.3, OUT_RISE = 0.5, OUT_HOP = 0.4, OUT_FADE = 0.3;
   let wellAnim = null;        // the jump-in / climb-out cutscene
@@ -57,7 +57,7 @@
     for(const d of [[0,1],[1,0],[-1,0],[0,-1]]){
       const x = w.x+d[0], y = w.y+d[1];
       const tt = tileAt(x,y);
-      if(x>=0 && y>=0 && x<COLS && y<ROWS && !SOLID.has(tt) && !'HKLuvUVXQ'.includes(tt)){ land = [x,y]; break; }
+      if(x>=0 && y>=0 && x<COLS && y<ROWS && !SOLID.has(tt) && !'HKLuvUVXQIz'.includes(tt)){ land = [x,y]; break; }
     }
     state.px = land[0]; state.py = land[1]; state.dir = 'down';
     updateMapName();
