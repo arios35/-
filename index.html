@@ -323,53 +323,6 @@
     </div>
   </div>
 
-<div id="errBox" style="display:none;position:fixed;left:0;right:0;top:0;z-index:999;background:#b00020;color:#fff;font:12px/1.6 monospace;padding:8px 10px;white-space:pre-wrap;max-height:60vh;overflow:auto;pointer-events:none"></div>
-<script>
-/* 診断用:問題が見つかったときだけ画面上部に赤い帯で表示する。原因がわかったら、この <script> ブロックは消してよい */
-(function(){
-  var box = document.getElementById('errBox');
-  function show(t, ok){
-    box.style.display = 'block';
-    box.style.background = ok ? '#1b6e2e' : '#b00020';
-    box.textContent += t + '\n';
-  }
-  window.addEventListener('error', function(e){
-    var t = e.target;
-    if(t && t.tagName === 'SCRIPT') show('読み込めないファイル: ' + t.getAttribute('src'));
-    else show('エラー: ' + e.message + '\n  場所: ' + String(e.filename||'').split('/').pop() + ' の ' + e.lineno + '行目');
-  }, true);
-  var CHECK = [['core','resizeCanvas'],['world','HOME'],['dungeon-gen','buildFloor'],['state','tileAt'],['sprites','drawSprite'],
-    ['interact','action'],['buildings','openGate'],['craft','renderCraft'],['wells','openWell'],['fishing','fishAction'],
-    ['dungeon','makeEnemy'],['boss','updateBoss'],['combat','updateEnemies'],['dungeon-draw','drawEnemies'],['gather','findNear'],
-    ['shop','openShop'],['input','drag'],['render','draw'],['main','goMap']];
-  window.addEventListener('load', function(){
-    setTimeout(function(){
-      var missing = [];
-      for(var i=0;i<CHECK.length;i++){
-        var ok = false;
-        try{ ok = (new Function('return typeof ' + CHECK[i][1]))() !== 'undefined'; }catch(e){}
-        if(!ok) missing.push('js/' + CHECK[i][0] + '.js');
-      }
-      if(missing.length){
-        show('実行されていないファイル(' + missing.length + '/' + CHECK.length + '):\n  ' + missing.join('\n  '));
-        missing.forEach(function(f){
-          fetch(f + '?t=' + Date.now(), {cache:'no-store'}).then(function(r){
-            if(!r.ok){ show('  ' + f + ' → サーバー応答 ' + r.status + '(ファイルが無い/名前違い)'); return null; }
-            return r.text();
-          }).then(function(t){
-            if(t === null || t === undefined) return;
-            var lines = t.split('\n').length;
-            var first = (t.split('\n').find(function(l){ return l.trim(); }) || '').trim().slice(0, 60);
-            show('  ' + f + ' の中身(サーバー上の最新): ' + lines + '行 / 先頭「' + first + '」' + (t.indexOf('SWORD_COST') >= 0 ? ' / SWORD_COSTを含む' : ''));
-          }).catch(function(e){ show('  ' + f + ' の取得に失敗: ' + e); });
-        });
-      }
-      else if(box.style.display === 'none'){ show('OK: 全' + CHECK.length + '本が読み込まれました', true); setTimeout(function(){ box.style.display = 'none'; }, 2500); }
-    }, 600);
-  });
-})();
-</script>
-
 <!-- 読み込み順を変えないこと(上から順に実行される) -->
 <script src="js/core.js?v=3"></script>
 <script src="js/world.js?v=3"></script>
