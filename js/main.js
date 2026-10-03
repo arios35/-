@@ -64,7 +64,7 @@
       stairHold += dt;                                   // stand on the stairs for a moment (being knocked onto them does nothing)
       if(stairHold >= 0.5){
         stairHold = 0;
-        if(curT==='K') changeFloor((state.floor||1)+1, true);
+        if(curT==='K'){ if((state.floor||1)<MAX_FLOOR) changeFloor((state.floor||1)+1, true); }
         else if((state.floor||1)<=1) goMap('cave');
         else changeFloor(state.floor-1, false);
       }
