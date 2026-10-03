@@ -18,7 +18,7 @@
       DUNGEON_START.spawnX = cx; DUNGEON_START.spawnY = y0+h-2;
       Object.assign(DUNGEON_ARENA, { active:true, x0, y0, w, h, cx, cy:y0+3 });
       Object.assign(DUNGEON_STAIRS, { x:cx, y:y0, spawnX:cx, spawnY:y0+1 });
-      if(bossDefeated(n)) DUNGEON[y0][cx] = 'K';
+      if(bossDefeated(n) && n<MAX_FLOOR) DUNGEON[y0][cx] = 'K';
       return;
     }
     const CW = 17, CH = 11;                      // 17 x 11 rooms
@@ -87,7 +87,7 @@
       Object.assign(DUNGEON_ARENA, { active:true, x0, y0, w, h, cx:x0+Math.floor(w/2), cy:y0+Math.floor(h/2) });
       const kx = x0+w-1, ky = y0;
       Object.assign(DUNGEON_STAIRS, { x:kx, y:ky, spawnX:kx-1, spawnY:ky });
-      if(bossDefeated(n)) DUNGEON[ky][kx] = 'K';
+      if(bossDefeated(n) && n<MAX_FLOOR) DUNGEON[ky][kx] = 'K';
     } else {
       const [x,y] = at(target.i,target.j);
       const off = target.deg===1 ? FAR[adj[target.i][target.j][0]] : [1,1];
