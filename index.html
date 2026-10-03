@@ -350,7 +350,20 @@
         try{ ok = (new Function('return typeof ' + CHECK[i][1]))() !== 'undefined'; }catch(e){}
         if(!ok) missing.push('js/' + CHECK[i][0] + '.js');
       }
-      if(missing.length) show('実行されていないファイル(' + missing.length + '/' + CHECK.length + '):\n  ' + missing.join('\n  '));
+      if(missing.length){
+        show('実行されていないファイル(' + missing.length + '/' + CHECK.length + '):\n  ' + missing.join('\n  '));
+        missing.forEach(function(f){
+          fetch(f + '?t=' + Date.now(), {cache:'no-store'}).then(function(r){
+            if(!r.ok){ show('  ' + f + ' → サーバー応答 ' + r.status + '(ファイルが無い/名前違い)'); return null; }
+            return r.text();
+          }).then(function(t){
+            if(t === null || t === undefined) return;
+            var lines = t.split('\n').length;
+            var first = (t.split('\n').find(function(l){ return l.trim(); }) || '').trim().slice(0, 60);
+            show('  ' + f + ' の中身(サーバー上の最新): ' + lines + '行 / 先頭「' + first + '」' + (t.indexOf('SWORD_COST') >= 0 ? ' / SWORD_COSTを含む' : ''));
+          }).catch(function(e){ show('  ' + f + ' の取得に失敗: ' + e); });
+        });
+      }
       else if(box.style.display === 'none'){ show('OK: 全' + CHECK.length + '本が読み込まれました', true); setTimeout(function(){ box.style.display = 'none'; }, 2500); }
     }, 600);
   });
@@ -358,24 +371,24 @@
 </script>
 
 <!-- 読み込み順を変えないこと(上から順に実行される) -->
-<script src="js/core.js"></script>
-<script src="js/world.js"></script>
-<script src="js/dungeon-gen.js"></script>
-<script src="js/state.js"></script>
-<script src="js/sprites.js"></script>
-<script src="js/interact.js"></script>
-<script src="js/buildings.js"></script>
-<script src="js/craft.js"></script>
-<script src="js/wells.js"></script>
-<script src="js/fishing.js"></script>
-<script src="js/dungeon.js"></script>
-<script src="js/boss.js"></script>
-<script src="js/combat.js"></script>
-<script src="js/dungeon-draw.js"></script>
-<script src="js/gather.js"></script>
-<script src="js/shop.js"></script>
-<script src="js/input.js"></script>
-<script src="js/render.js"></script>
-<script src="js/main.js"></script>
+<script src="js/core.js?v=3"></script>
+<script src="js/world.js?v=3"></script>
+<script src="js/dungeon-gen.js?v=3"></script>
+<script src="js/state.js?v=3"></script>
+<script src="js/sprites.js?v=3"></script>
+<script src="js/interact.js?v=3"></script>
+<script src="js/buildings.js?v=3"></script>
+<script src="js/craft.js?v=3"></script>
+<script src="js/wells.js?v=3"></script>
+<script src="js/fishing.js?v=3"></script>
+<script src="js/dungeon.js?v=3"></script>
+<script src="js/boss.js?v=3"></script>
+<script src="js/combat.js?v=3"></script>
+<script src="js/dungeon-draw.js?v=3"></script>
+<script src="js/gather.js?v=3"></script>
+<script src="js/shop.js?v=3"></script>
+<script src="js/input.js?v=3"></script>
+<script src="js/render.js?v=3"></script>
+<script src="js/main.js?v=3"></script>
 </body>
 </html>
