@@ -12,7 +12,7 @@
     if(nearType('O')){ openEnchant(); return; }
     const wk = findNear('k'), gd = findNear('D');
     if(wk && !(gd && gd[2] < wk[2])){ openWell(); return; }   // next to both the well and the locked stairs: the nearer one
-    if(nearAny(GATE_CHARS)){ openGate(['G','Z','T','D'].find(c=>findNear(c))); return; }
+    if(nearAny(GATE_CHARS)){ openGate(['G','Z','T','D','J'].find(c=>findNear(c))); return; }
     if(nearAny(HOUSE_CHARS)){ openSleep(); return; }
     if(nearAny(SITE_CHARS)){ openSite(); return; }
     if(nearAny(WORK_CHARS)){ openCraft(); return; }
@@ -157,6 +157,7 @@
     '牛の牧場の南に羊の牧場があるよ。羊のエサはトマトなんだ🍅'
   ];
   const riverLines = [
+    '川の国の南の端に門があるよ。その先は海岸なんだ(通行料3000G)🏖️',
     '釣りは西と東、ふたつの桟橋でできるよ🎣',
     '東の湖の魚はレアなのが多いんだ。竿を強化するともっと釣れるよ',
     '西の釣具屋は魚を高く買ってくれるよ。きのこも買い取りだ🍄',
@@ -180,10 +181,19 @@
     '洞窟の一番奥に、地下へ続く階段があるって噂だよ(10000G)🪜',
     '建設予定地の東に素材屋があるよ。木材・石・鉄をまとめて売れるんだ🏪'
   ];
+  const coastLines = [
+    '潮風が気持ちいいでしょ。ここは世界の南の果ての海岸だよ🌊',
+    '西も南も、見渡すかぎり海さ。この先には行けないんだ',
+    '浜辺のどこかに宝箱が埋まってるって噂だよ。開けても二週間たつとまた中身が入るらしい',
+    '砂浜は歩きやすいけど、波打ち際には近づきすぎないようにね',
+    '夕日が海に沈むところは最高なんだ。何度見ても飽きないよ',
+    '井戸があるから、他の井戸の場所とすぐ行き来できるよ',
+    '木のそばにはきのこも生えてるよ🍄'
+  ];
   function talkNPC(){
     const m = state.map;
-    const lines = m==='north' ? northLines : m==='river' ? riverLines : npcLines;
-    setMsg((m==='north' ? '🧔 ' : m==='river' ? '🧓 ' : '👩 ') + lines[Math.floor(Math.random()*lines.length)]);
+    const lines = m==='north' ? northLines : m==='river' ? riverLines : m==='coast' ? coastLines : npcLines;
+    setMsg((m==='north' ? '🧔 ' : m==='river' ? '🧓 ' : m==='coast' ? '🧑 ' : '👩 ') + lines[Math.floor(Math.random()*lines.length)]);
   }
 
   function chickenAction(){
