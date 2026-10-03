@@ -1,11 +1,12 @@
-  const MAP_LAYOUTS = { home:HOME, north:NORTH, river:RIVER, cave:CAVE, dungeon:DUNGEON };
+  const MAP_LAYOUTS = { home:HOME, north:NORTH, river:RIVER, cave:CAVE, dungeon:DUNGEON, coast:COAST };
   function setMapSize(name){
     if(name==='dungeon'){ COLS = DCOLS; ROWS = DROWS; }
     else if(name==='river'){ COLS = RCOLS; ROWS = RROWS; }
+    else if(name==='coast'){ COLS = CCOLS; ROWS = CROWS; }
     else { COLS = 32; ROWS = 24; }
   }
 
-  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A','D','Y','W','O','k']);
+  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','J','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A','D','Y','W','O','k']);
 
   let state = {
     px:6, py:5, dir:'down',
@@ -13,7 +14,7 @@
     selectedCrop:'wheat', eggs:0, toolLevel:1,
     wood:0, mikan:0, treeHits:{}, chopped:{}, fruit:null,
     stone:0, iron:0, goldOre:0, rockHits:{}, mined:{}, axeLevel:1, pickLevel:1, map:'home',
-    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, sword:false, wells:{home:false,north:false,river:false,cave:false}, wellsOpen:false, enchant:{knock:0,wave:0,fire:0}, swordLevel:1, floor:1, bossDone:{}, bossBeaten:{}, mushroom:0, rodLevel:1, opened:{}, hp:10, stairsOpen:false, dayTime:0, chest:{counts:{}}, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
+    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, sword:false, wells:{home:false,north:false,river:false,cave:false,coast:false}, wellsOpen:false, enchant:{knock:0,wave:0,fire:0}, swordLevel:1, floor:1, bossDone:{}, bossBeaten:{}, mushroom:0, rodLevel:1, opened:{}, hp:10, stairsOpen:false, dayTime:0, chest:{counts:{}}, northHouse:false, totalHarvest:0, gate2Open:false, gate4Open:false, gate3Open:false,
     fish:{ minnow:0, ayu:0, carp:0, yamame:0, catfish:0 },
     chicken:{ fed:false, eggReady:false },
     tiles:{} // "x,y" -> {tilled, planted, growth, watered}
@@ -48,15 +49,16 @@
     if(c==='G' && state.gateOpen) return '3';
     if(c==='Z' && state.gate2Open) return '3';
     if(c==='T' && state.gate3Open) return '3';
+    if(c==='J' && state.gate4Open) return '3';
     if(c==='D' && state.stairsOpen) return 'H';
     if(state.northHouse){ const hm = HOUSE_MAP[c]; if(hm) return hm; }
     return c;
   }
   function tileX(){ return Math.round(state.px); }
   function tileY(){ return Math.round(state.py); }
-  function K(x,y){ return (state.map==='north' ? 'n:' : state.map==='river' ? 'r:' : state.map==='cave' ? 'c:' : state.map==='dungeon' ? 'd:' : '') + x + ',' + y; }
+  function K(x,y){ return (state.map==='north' ? 'n:' : state.map==='river' ? 'r:' : state.map==='coast' ? 's:' : state.map==='cave' ? 'c:' : state.map==='dungeon' ? 'd:' : '') + x + ',' + y; }
   function key(x,y){ return K(x,y); }
-  function parseKey(k){ const m = k.match(/^(?:(n|r|c|d):)?(-?\d+),(-?\d+)$/); return { map: m[1]==='n'?'north':m[1]==='r'?'river':m[1]==='c'?'cave':m[1]==='d'?'dungeon':'home', x:+m[2], y:+m[3] }; }
+  function parseKey(k){ const m = k.match(/^(?:(n|r|c|d|s):)?(-?\d+),(-?\d+)$/); return { map: m[1]==='n'?'north':m[1]==='r'?'river':m[1]==='s'?'coast':m[1]==='c'?'cave':m[1]==='d'?'dungeon':'home', x:+m[2], y:+m[3] }; }
   function farmTile(x,y){
     const k = key(x,y);
     if(!state.tiles[k]) state.tiles[k] = {tilled:false, planted:false, growth:0, watered:false, crop:null};
@@ -107,7 +109,7 @@
   }
 
   const WORK_CHARS = new Set(['h','i']);
-  const GATE_CHARS = new Set(['G','Z','T','D']);
+  const GATE_CHARS = new Set(['G','Z','T','D','J']);
   const HOUSE_CHARS = new Set(['l','m','n','o','p','q']);
   const SITE_CHARS = new Set(['r','R','x','s','S','y']);
   const HOUSE_MAP = { r:'l', R:'m', x:'n', s:'o', S:'p', y:'q' };
