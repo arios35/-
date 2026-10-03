@@ -1,5 +1,5 @@
   // ---- Map name label (HTML, under the instructions) ----
-  const MAP_NAMES = { home:'🏡 のんびり村', north:'⛰️ 北の山', river:'🏞️ 川の国', cave:'🕳️ 洞窟', dungeon:'⚔️ 地下ダンジョン' };
+  const MAP_NAMES = { home:'🏡 のんびり村', north:'⛰️ 北の山', river:'🏞️ 川の国', coast:'🏖️ 南の海岸', cave:'🕳️ 洞窟', dungeon:'⚔️ 地下ダンジョン' };
   function updateMapName(){
     document.getElementById('mapName').textContent = (MAP_NAMES[state.map] || '') + (state.map==='dungeon' ? ` 地下${state.floor||1}階` : '');
     document.getElementById('btnReturn').style.display = state.map==='dungeon' ? '' : 'none';
