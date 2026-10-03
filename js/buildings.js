@@ -3,6 +3,7 @@
     G:{ cost:500,  key:'gateOpen',  title:'🚪 北の山への門', desc:'通行料500Gを払うと門が開いて、北の山に行けるようになります。', done:'門が開いた!北の山へ行けるよ⛰️' },
     D:{ cost:10000, key:'stairsOpen', title:'🪜 地下への階段', desc:'10000Gを払うと階段が使えるようになり、地下ダンジョンに行けます。ダンジョンでライフがなくなると、手荷物とお金を全部失います!(家に預けたものは無事)', done:'階段が開いた!地下ダンジョンへ行けるよ🪜' },
     T:{ cost:5000, key:'gate3Open', title:'🚪 洞窟への門', desc:'通行料5000Gを払うと門が開いて、山の奥の洞窟に行けるようになります。', done:'門が開いた!洞窟へ行けるよ🕳️' },
+    J:{ cost:3000, key:'gate4Open', title:'🚪 南の海岸への門', desc:'通行料3000Gを払うと門が開いて、川の国のさらに南にある、砂浜と海のエリアに行けるようになります。', done:'門が開いた!南の海岸へ行けるよ🏖️' },
     Z:{ cost:2000, key:'gate2Open', title:'🚪 川の国への門', desc:'通行料2000Gを払うと門が開いて、川と橋と釣り場のあるエリアに行けるようになります。', done:'門が開いた!川の国へ行けるよ🏞️' },
   };
   let curGate = 'G';
@@ -219,7 +220,7 @@
       if(state.day - state.mined[k] >= (isGold ? 7 : 4) && !near) delete state.mined[k];
     }
     for(const k of Object.keys(state.opened||{})){ if(state.day - state.opened[k] >= 14) delete state.opened[k]; }
-    for(const k of treeKeys.concat(treeKeysN, treeKeysR)){
+    for(const k of treeKeys.concat(treeKeysN, treeKeysR, treeKeysC)){
       if(state.chopped[k]===undefined && !state.fruit[k] && Math.random()<0.2) state.fruit[k] = true;
     }
     state.dayTime = 0;
