@@ -98,9 +98,19 @@
       ctx.fillStyle = '#8a4a32';
       ctx.fillRect(px+4*u, py+5*u, 2*u, 8*u);
       ctx.fillRect(px+4*u, py+6*u, 4*u, 2*u); ctx.fillRect(px+4*u, py+10*u, 4*u, 2*u);
-    } else if(t==='G'||t==='Z'||t==='T'){
+    } else if(t==='G'||t==='Z'||t==='T'||t==='J'){
       ctx.fillStyle = '#e8dcae'; ctx.fillRect(px,py,TILE,TILE);
-    } else if(t==='3'||t==='u'||t==='v'||t==='U'||t==='V'||t==='X'||t==='Q'){
+    } else if(t==='t'){                                  // sand beach, with foam where it meets the sea
+      ctx.fillStyle = '#efdca0'; ctx.fillRect(px,py,TILE,TILE);
+      speckle(px,py,wx,wy,6,'rgba(160,120,60,0.18)',1,2);
+      speckle(px,py,wx,wy+50,3,'rgba(255,255,255,0.35)',1,2);
+      const wv = (Math.sin(performance.now()/500 + wx*0.8 + wy*0.6)+1)/2;
+      ctx.fillStyle = `rgba(255,255,255,${0.35+0.35*wv})`;
+      if(tileAt(wx-1,wy)==='7') ctx.fillRect(px, py, 3, TILE);
+      if(tileAt(wx+1,wy)==='7') ctx.fillRect(px+TILE-3, py, 3, TILE);
+      if(tileAt(wx,wy-1)==='7') ctx.fillRect(px, py, TILE, 3);
+      if(tileAt(wx,wy+1)==='7') ctx.fillRect(px, py+TILE-3, TILE, 3);
+    } else if(t==='3'||t==='u'||t==='v'||t==='U'||t==='V'||t==='X'||t==='Q'||t==='I'||t==='z'){
       ctx.fillStyle = '#e8dcae';
       ctx.fillRect(px,py,TILE,TILE);
       ctx.fillStyle = 'rgba(0,0,0,0.07)';
@@ -216,7 +226,7 @@
       ctx.fillStyle = GROUND;
       ctx.fillRect(px,py,TILE,TILE);
     } else if(t==='7'){
-      ctx.fillStyle = '#6ea8d8';
+      ctx.fillStyle = state.map==='coast' ? '#4f93cf' : '#6ea8d8';
       ctx.fillRect(px,py,TILE,TILE);
       ctx.strokeStyle = 'rgba(255,255,255,0.35)';
       const wt = performance.now()/900;
@@ -362,7 +372,7 @@
   function addEffect(wx,wy,type,color){ effects.push({wx,wy,type,color,start:performance.now()}); }
 
   function draw(){
-    GROUND = state.map==='dungeon' ? DUNGEON_GROUND[floorTier(state.floor||1)] : state.map==='cave' ? '#6f6b76' : state.map==='north' ? '#8fbf86' : state.map==='river' ? '#9fcf97' : '#a9c96e';
+    GROUND = state.map==='coast' ? '#b3d98c' : state.map==='dungeon' ? DUNGEON_GROUND[floorTier(state.floor||1)] : state.map==='cave' ? '#6f6b76' : state.map==='north' ? '#8fbf86' : state.map==='river' ? '#9fcf97' : '#a9c96e';
     const {camX, camY} = camera();
     ctx.fillStyle = GROUND;                                   // never leave old frames showing
     ctx.fillRect(0, 0, VIEW_COLS*TILE + TILE, VIEW_ROWS*TILE + TILE);
@@ -376,7 +386,7 @@
         const tt = tileAt(wx,wy);
         if(tt==='6'||tt==='9') trees.push([sx,sy,wx,wy,tt]);
         if(tt==='M' && tileAt(wx,wy+1)!=='M') mts.push([sx,sy,wx]);
-        if(tt==='G'||tt==='Z'||tt==='T'||tt==='u'||tt==='v'||tt==='U'||tt==='V'||tt==='X'||tt==='Q') overlays.push([sx,sy,wx,tt]);
+        if(tt==='G'||tt==='Z'||tt==='T'||tt==='u'||tt==='v'||tt==='U'||tt==='V'||tt==='X'||tt==='Q'||tt==='J'||tt==='I'||tt==='z') overlays.push([sx,sy,wx,tt]);
         drawTile(wx, wy, sx/TILE, sy/TILE);
       }
     }
@@ -403,7 +413,7 @@
     // Gate and exit arrows on top of the border trees
     for(const [ox,oy,owx,ot] of overlays){
       const u = TILE/16;
-      if(ot==='G'||ot==='Z'||ot==='T'){
+      if(ot==='G'||ot==='Z'||ot==='T'||ot==='J'){
         const left = (owx%2===0);
         ctx.fillStyle = '#8a5a34';
         ctx.fillRect(ox,oy+3*u,TILE,2*u); ctx.fillRect(ox,oy+9*u,TILE,2*u);
@@ -413,7 +423,7 @@
       } else {
         ctx.fillStyle = '#e0a030';
         ctx.beginPath();
-        if(ot==='u'||ot==='V'||ot==='X'){ ctx.moveTo(ox+TILE/2,oy+6); ctx.lineTo(ox+TILE-7,oy+TILE-7); ctx.lineTo(ox+7,oy+TILE-7); }
+        if(ot==='u'||ot==='V'||ot==='X'||ot==='z'){ ctx.moveTo(ox+TILE/2,oy+6); ctx.lineTo(ox+TILE-7,oy+TILE-7); ctx.lineTo(ox+7,oy+TILE-7); }
         else { ctx.moveTo(ox+TILE/2,oy+TILE-6); ctx.lineTo(ox+TILE-7,oy+7); ctx.lineTo(ox+7,oy+7); }
         ctx.fill();
       }
