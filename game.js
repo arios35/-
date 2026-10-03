@@ -1,1 +1,3261 @@
+(function(){
+  document.addEventListener('gesturestart', (e)=>e.preventDefault());
+  document.addEventListener('selectstart', (e)=>e.preventDefault());     // no text selection / copy popup on long-press
+  document.addEventListener('contextmenu', (e)=>e.preventDefault());   // iOS pinch zoom only (no tap swallowing)
+
+  const TILE = 30;
+  let VIEW_COLS = 14, VIEW_ROWS = 10;
+  let COLS = 32, ROWS = 24; // world size of the current map (the dungeon is bigger)
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  let displayW = TILE*VIEW_COLS;
+
+  // 画面サイズに合わせてゲーム画面を拡大(タイルも大きくなる)
+  function resizeCanvas(){
+    const landscape = window.innerWidth > window.innerHeight && window.innerHeight <= 500;
+    const top = canvas.getBoundingClientRect().top + window.scrollY;
+    let availW, availH, ts;
+    if(landscape){
+      availW = window.innerWidth - 16 - 190 - 14 - 6;
+      availH = window.innerHeight - top - 14;
+      ts = Math.min(availW/12, availH/8, 48);
+    } else {
+      availW = Math.min(document.documentElement.clientWidth - 16, 760) - 6;
+      availH = window.innerHeight - top - 140;
+      ts = Math.min(availW/11, 48);
+    }
+    ts = Math.max(ts, 24);
+    const cols = Math.min(COLS, Math.max(8, Math.floor(availW/ts + 0.001)));
+    const rows = Math.min(ROWS, Math.max(6, availH/ts)); // 縦は端数も使って余白なく広げる
+    VIEW_COLS = cols; VIEW_ROWS = rows;
+    displayW = TILE*cols;
+    const scale = ts/TILE;
+    canvas.style.width = (cols*ts) + 'px';
+    canvas.style.height = (rows*ts) + 'px';
+    canvas.width = Math.round(cols*ts*DPR);
+    canvas.height = Math.round(rows*ts*DPR);
+    ctx.setTransform(DPR*scale, 0, 0, DPR*scale, 0, 0);
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('orientationchange', ()=>setTimeout(resizeCanvas, 150));
+  setTimeout(resizeCanvas, 120);
+
+  const SAVE_KEY = 'nonbiri-farm-save-v1';
+
+  // World: 0 grass, 1 soil, 2 shop, 3 path, 4 NPC, 5 chicken coop, 6 tree, 7 water
+  const layout = [];
+  for(let y=0;y<ROWS;y++){ const row=[]; for(let x=0;x<COLS;x++) row.push('0'); layout.push(row); }
+  function fillRect(x0,y0,x1,y1,ch){
+    for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){ if(layout[y] && layout[y][x]!==undefined) layout[y][x]=ch; }
+  }
+  fillRect(4,3,10,8,'1');            // home farm
+  fillRect(3,2,11,2,'8');            // farm fence: north
+  fillRect(3,9,11,9,'8');            // farm fence: south
+  fillRect(3,3,3,8,'8');             // farm fence: west
+  fillRect(11,2,11,18,'3');          // main path spine (reopens east side of farm)
+  fillRect(11,6,18,6,'3');           // branch to village
+  fillRect(18,6,18,16,'3');          // branch down
+  fillRect(18,16,24,16,'3');         // branch to second farm
+  fillRect(21,17,26,20,'1');         // second farm plot
+  fillRect(2,14,6,17,'7');           // lake
+  layout[4][15]='a'; layout[4][16]='b'; layout[4][17]='c'; // shop building: roof (3 tiles)
+  layout[5][15]='d'; layout[5][16]='e'; layout[5][17]='f'; // shop building: walls + door (3 tiles)
+  layout[4][13]='4';                 // NPC
+  layout[8][16]='5';                 // chicken coop
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    if(layout[y][x]==='0' && (x*7+y*13)%23===0) layout[y][x]='6'; // scattered trees
+  }
+  // Rocks: scattered plus a rocky quarry area
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    if(layout[y][x]==='0' && (x*5+y*11)%19===0) layout[y][x]='g';
+  }
+  for(let y=3;y<=8;y++) for(let x=22;x<=28;x++){
+    if(layout[y][x]==='0' && (x*3+y*7)%3===0) layout[y][x]='g';
+  }
+  layout[8][13]='h'; layout[8][14]='i'; // workbench (2 tiles wide, moved 1 south to stay clear of the shop)
+  layout[11][7]='l'; layout[11][8]='m'; layout[11][9]='n'; // my house: roof
+  layout[12][7]='o'; layout[12][8]='p'; layout[12][9]='q'; // my house: walls + door
+  // Keep trees/rocks away from the shop, coop, workbench and NPC
+  function clearAround(L,x0,y0,x1,y1,r){
+    for(let y=y0-r;y<=y1+r;y++) for(let x=x0-r;x<=x1+r;x++){
+      if(L[y] && (L[y][x]==='6'||L[y][x]==='g'||L[y][x]==='P')) L[y][x]='0';
+    }
+  }
+  clearAround(layout,15,4,17,5,3);   // shop
+  clearAround(layout,16,8,16,8,3);   // coop
+  clearAround(layout,13,8,14,8,3);   // workbench
+  clearAround(layout,13,4,13,4,2);   // NPC
+  clearAround(layout,7,11,9,12,2);   // my house
+  layout[11][14]='k'; clearAround(layout,14,11,14,11,2);   // village well
+  // Unbreakable border forest (2 tiles thick)
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    if(x<2||y<2||x>=COLS-2||y>=ROWS-2) layout[y][x]='9';
+  }
+  // Secret passage in the top-right: leads to the northern map
+  fillRect(26,2,27,9,'3');
+  fillRect(19,9,27,9,'3');
+  layout[1][26]='3'; layout[1][27]='3'; layout[0][26]='u'; layout[0][27]='u';
+  // Fenced pasture east of the shop (interior x20-23, y3-6)
+  for(let y=2;y<=7;y++) for(let x=19;x<=24;x++){
+    layout[y][x] = (x===19||x===24||y===2||y===7) ? '8' : '0';
+  }
+  layout[7][21]='j';                 // pasture gate (1 tile, walkable by the player)
+  // Sheep pasture just south of the secret-passage path (interior x20-23, y11-14)
+  for(let y=10;y<=15;y++) for(let x=19;x<=24;x++){
+    layout[y][x] = (x===19||x===24||y===10||y===15) ? '8' : '0';
+  }
+  layout[10][21]='j';                // sheep pasture gate
+  // Toll gate (500G) set between the border trees
+  layout[1][26]='G'; layout[1][27]='G';
+  // Bottom-left passage to the river area (2000G gate between the border trees)
+  fillRect(3,19,11,20,'3');
+  fillRect(3,19,4,21,'3');
+  layout[22][3]='Z'; layout[22][4]='Z'; layout[23][3]='U'; layout[23][4]='U';
+  const treeKeys = [];
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(layout[y][x]==='6') treeKeys.push(x+','+y); }
+
+  // ===== Northern map (mountain & forest) =====
+  const HOME = layout;
+  const NORTH = [];
+  for(let y=0;y<ROWS;y++){ const row=[]; for(let x=0;x<COLS;x++) row.push('0'); NORTH.push(row); }
+  function nfr(x0,y0,x1,y1,ch){ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){ if(NORTH[y] && NORTH[y][x]!==undefined) NORTH[y][x]=ch; } }
+  nfr(26,15,27,23,'3');      // corridor from the entrance
+  nfr(13,15,27,16,'3');      // west
+  nfr(13,8,14,16,'3');       // north
+  nfr(13,8,23,9,'3');        // east
+  nfr(22,2,23,9,'3');        // up to the quarry (and on to the cave gate)
+  nfr(4,12,9,17,'7');        // pond
+  nfr(17,11,22,14,'1');      // farm patch
+  NORTH[7][16]='h'; NORTH[7][17]='i';  // workbench
+  NORTH[7][20]='4';                    // hermit NPC
+  NORTH[18][18]='r'; NORTH[18][19]='R'; NORTH[18][20]='x';  // house construction site
+  NORTH[19][18]='s'; NORTH[19][19]='S'; NORTH[19][20]='y';
+  NORTH[18][22]='a'; NORTH[18][23]='b'; NORTH[18][24]='c';  // material shop: roof
+  NORTH[19][22]='d'; NORTH[19][23]='e'; NORTH[19][24]='f';  // material shop: walls + door
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    if(NORTH[y][x]!=='0') continue;
+    if(x<=12 && y<=11 && (x*5+y*7)%4===0) NORTH[y][x]='6';        // dense forest (west)
+    else if(x>=24 && y>=3 && y<=12 && (x+y*2)%3===0) NORTH[y][x]='g'; // rich quarry (east)
+    else if((x*7+y*13)%11===0) NORTH[y][x]='6';
+    else if((x*5+y*11)%17===0) NORTH[y][x]='g';
+  }
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    if(y<2) NORTH[y][x]='M';                                   // north edge: mountain range
+    else if(x<2||x>=COLS-2||y>=ROWS-2) NORTH[y][x]='9';
+  }
+  NORTH[1][22]='T'; NORTH[1][23]='T';                          // toll gate to the cave
+  NORTH[0][22]='X'; NORTH[0][23]='X';                          // exit to the cave
+  NORTH[22][26]='3'; NORTH[22][27]='3'; NORTH[23][26]='v'; NORTH[23][27]='v';
+  clearAround(NORTH,16,7,17,7,2);
+  clearAround(NORTH,20,7,20,7,2);
+  clearAround(NORTH,18,18,20,19,2);
+  clearAround(NORTH,22,18,24,19,3);
+  NORTH[12][15]='k'; clearAround(NORTH,15,12,15,12,2);      // mountain well
+  const treeKeysN = [];
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){ if(NORTH[y][x]==='6') treeKeysN.push('n:'+x+','+y); }
+  let curLayout = HOME;
+
+  // ===== River area (big: rivers, bridges, two piers, a tackle shop, chests, mushrooms) =====
+  const RCOLS = 48, RROWS = 34;
+  const RIVER = [];
+  for(let y=0;y<RROWS;y++){ const row=[]; for(let x=0;x<RCOLS;x++) row.push('0'); RIVER.push(row); }
+  function rfr(x0,y0,x1,y1,ch){ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){ if(RIVER[y] && RIVER[y][x]!==undefined) RIVER[y][x]=ch; } }
+  const rput = (x,y,ch)=>{ RIVER[y][x] = ch; };
+  for(let y=0;y<RROWS;y++) for(let x=0;x<RCOLS;x++){
+    if((x*7+y*13)%9===0) RIVER[y][x]='6';
+    else if((x*5+y*11)%23===0) RIVER[y][x]='g';
+    else if((x*11+y*3)%13===0) RIVER[y][x]='P';                 // wild mushrooms
+  }
+  for(let y=0;y<RROWS;y++) for(let x=0;x<RCOLS;x++){
+    if(x<2||y<2||x>=RCOLS-2||y>=RROWS-2) RIVER[y][x]='9';
+  }
+  rfr(12,2,13,31,'7');    // river A (north-south)
+  rfr(14,13,45,14,'7');   // river B (east-west)
+  rfr(30,15,31,31,'7');   // river C (north-south)
+  rfr(16,19,27,28,'7');   // lake 1 (west pier)
+  rfr(36,19,44,27,'7');   // lake 2 (east pier, rarer fish)
+  rfr(36,3,42,7,'7');     // north-east pond
+  rfr(6,25,9,29,'7');     // south-west pond
+  rfr(3,1,4,10,'3');      // road from the gate
+  rfr(3,9,11,10,'3');     // to bridge A1
+  rfr(3,10,4,30,'3');     // west road going south
+  rfr(3,22,11,23,'3');    // to bridge A2
+  rfr(14,9,45,10,'3');    // main road east
+  rfr(20,11,21,18,'3');   // road to the west pier
+  rfr(34,11,35,18,'3');   // road south over bridge C2
+  rfr(14,22,15,30,'3');   // riverside road
+  rfr(14,29,44,30,'3');   // southern road
+  rfr(34,15,35,30,'3');   // eastern road
+  rfr(34,17,41,18,'3');   // road to the east pier
+  rfr(12,9,13,10,'B');    // bridge A1
+  rfr(12,22,13,23,'B');   // bridge A2
+  rfr(20,13,21,14,'C');   // bridge C1
+  rfr(34,13,35,14,'C');   // bridge C2
+  rfr(30,29,31,30,'B');   // bridge over river C
+  rfr(21,19,21,23,'F');   // west fishing pier
+  rfr(40,19,40,24,'F');   // east fishing pier
+  rfr(38,25,42,26,'0');   // small island at the end of the east pier
+  rput(6,13,'a'); rput(7,13,'b'); rput(8,13,'c');   // tackle shop: roof
+  rput(6,14,'d'); rput(7,14,'e'); rput(8,14,'f');   // tackle shop: walls + door
+  rput(23,17,'4'); rput(43,17,'4'); rput(6,16,'4'); rput(28,6,'4');   // villagers
+  rput(44,5,'Y'); rput(40,26,'Y'); rput(5,30,'Y'); rput(30,4,'Y');   // treasure chests
+  RIVER[0][3]='V'; RIVER[0][4]='V';
+  rput(6,20,'k'); clearAround(RIVER,6,20,6,20,2);           // river well
+  clearAround(RIVER,6,13,8,14,3);
+  for(const [nx,ny] of [[23,17],[43,17],[6,16],[28,6]]) clearAround(RIVER,nx,ny,nx,ny,3);
+  for(const [cx,cy] of [[44,5],[40,26],[5,30],[30,4]]) clearAround(RIVER,cx,cy,cx,cy,1);
+  clearAround(RIVER,3,2,4,2,2);
+  const FISH_SPOTS = [[21,19],[40,19]];   // pier entrances (the rod marker is drawn here)
+  const treeKeysR = [];
+  for(let y=0;y<RROWS;y++) for(let x=0;x<RCOLS;x++){ if(RIVER[y][x]==='6') treeKeysR.push('r:'+x+','+y); }
+
+  // ===== Cave area: a winding maze of narrow passages =====
+  const CAVE_STAIRS = {}, CAVE_TABLE = {}, CAVE_WELL = {};
+  const CAVE = [];
+  for(let y=0;y<ROWS;y++){ const row=[]; for(let x=0;x<COLS;x++) row.push('N'); CAVE.push(row); }
+  (function buildCave(){
+    const CW = 9, CH = 6;                        // 9 x 6 rooms (2x2 tiles each, 1-tile walls)
+    let seed = 20240607;                         // fixed seed: the same cave every time
+    const rnd = ()=>{ seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    const at = (i,j)=>[3+3*i, 3+3*j];
+    const carve = (x0,y0,x1,y1,ch)=>{ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++) CAVE[y][x]=ch; };
+    const DIRS = { N:[0,-1], S:[0,1], E:[1,0], W:[-1,0] };
+    const OPP = { N:'S', S:'N', E:'W', W:'E' };
+    const inside = (i,j)=> i>=0 && j>=0 && i<CW && j<CH;
+    const adj = [], seen = [], dist = [];
+    for(let i=0;i<CW;i++){
+      adj.push([]); seen.push([]); dist.push([]);
+      for(let j=0;j<CH;j++){ adj[i].push([]); seen[i].push(false); dist[i].push(-1); const [x,y]=at(i,j); carve(x,y,x+1,y+1,'0'); }
+    }
+    function link(i,j,d){
+      const [dx,dy] = DIRS[d], ni = i+dx, nj = j+dy, [x,y] = at(i,j);
+      if(d==='E') carve(x+2,y,x+2,y+1,'0');
+      else if(d==='W') carve(x-1,y,x-1,y+1,'0');
+      else if(d==='S') carve(x,y+2,x+1,y+2,'0');
+      else carve(x,y-1,x+1,y-1,'0');
+      if(!adj[i][j].includes(d)) adj[i][j].push(d);
+      if(!adj[ni][nj].includes(OPP[d])) adj[ni][nj].push(OPP[d]);
+    }
+    // Depth-first maze, starting from the entrance room
+    const EI = 4, EJ = 5;
+    const stack = [[EI,EJ]]; seen[EI][EJ] = true;
+    while(stack.length){
+      const [i,j] = stack[stack.length-1];
+      const opts = Object.keys(DIRS).filter(d=>{ const ni=i+DIRS[d][0], nj=j+DIRS[d][1]; return inside(ni,nj) && !seen[ni][nj]; });
+      if(!opts.length){ stack.pop(); continue; }
+      const d = opts[Math.floor(rnd()*opts.length)];
+      const ni = i+DIRS[d][0], nj = j+DIRS[d][1];
+      link(i,j,d); seen[ni][nj] = true; stack.push([ni,nj]);
+    }
+    // A few extra openings so there are loops as well as dead ends
+    for(let n=0;n<10;n++){
+      const i = Math.floor(rnd()*CW), j = Math.floor(rnd()*CH);
+      const ds = Object.keys(DIRS).filter(d=> inside(i+DIRS[d][0], j+DIRS[d][1]) && !adj[i][j].includes(d));
+      if(ds.length) link(i,j,ds[Math.floor(rnd()*ds.length)]);
+    }
+    // Distance from the entrance
+    dist[EI][EJ] = 0;
+    const q = [[EI,EJ]];
+    while(q.length){
+      const [i,j] = q.shift();
+      for(const d of adj[i][j]){ const ni=i+DIRS[d][0], nj=j+DIRS[d][1]; if(dist[ni][nj]<0){ dist[ni][nj] = dist[i][j]+1; q.push([ni,nj]); } }
+    }
+    const cells = [];
+    for(let i=0;i<CW;i++) for(let j=0;j<CH;j++) if(!(i===EI && j===EJ)) cells.push({ i, j, deg: adj[i][j].length, d: dist[i][j], gold:false });
+    // Stairs down to the dungeon: the room farthest from the entrance. Gold ore: the next-deepest rooms.
+    const deadEnds = cells.filter(c=>c.deg===1).sort((a,b)=>b.d-a.d);
+    const others = cells.filter(c=>c.deg>1).sort((a,b)=>b.d-a.d);
+    const FAR = { N:[1,1], S:[0,0], E:[0,1], W:[1,0] };   // the tile farthest from the room's only opening
+    deadEnds.concat(others).slice(0,15).forEach((c,idx)=>{
+      const [x,y] = at(c.i,c.j);
+      const off = c.deg===1 ? FAR[adj[c.i][c.j][0]] : [1,1];
+      CAVE[y+off[1]][x+off[0]] = idx===0 ? 'D' : 'A';
+      c.gold = true;
+      if(idx===0){ CAVE_STAIRS.x = x+off[0]; CAVE_STAIRS.y = y+off[1]; CAVE_STAIRS.spawnX = x+1-off[0]; CAVE_STAIRS.spawnY = y+1-off[1]; }
+    });
+    // Ordinary rocks: one corner tile in about half of the rooms (never blocks a passage)
+    for(const c of cells){
+      if(c.gold || rnd()>0.55) continue;
+      const [x,y] = at(c.i,c.j);
+      const ox = rnd()<0.5 ? 0 : 1, oy = rnd()<0.5 ? 0 : 1;
+      if(CAVE[y+oy][x+ox]==='0') CAVE[y+oy][x+ox] = 'g';
+    }
+    // Enchanting table: in the closest room to the dungeon stairs that has nothing else in it
+    (function placeTable(){
+      const sc = deadEnds.concat(others)[0];
+      const seenB = new Set([sc.i+','+sc.j]), qq = [[sc.i,sc.j]];
+      while(qq.length){
+        const [i,j] = qq.shift();
+        if(!(i===sc.i && j===sc.j) && !(i===EI && j===EJ)){
+          const [x,y] = at(i,j);
+          const ts = [[0,0],[1,0],[0,1],[1,1]].map(o=>[x+o[0], y+o[1]]);
+          if(ts.every(p=>CAVE[p[1]][p[0]]==='0')){
+            ts.sort((a,b)=>Math.hypot(b[0]-CAVE_STAIRS.x,b[1]-CAVE_STAIRS.y)-Math.hypot(a[0]-CAVE_STAIRS.x,a[1]-CAVE_STAIRS.y));
+            CAVE[ts[0][1]][ts[0][0]] = 'O'; CAVE_TABLE.x = ts[0][0]; CAVE_TABLE.y = ts[0][1];
+            return;
+          }
+        }
+        for(const d of adj[i][j]){ const ni=i+DIRS[d][0], nj=j+DIRS[d][1], k=ni+','+nj; if(!seenB.has(k)){ seenB.add(k); qq.push([ni,nj]); } }
+      }
+    })();
+    // Cave well: inside the stairs room itself, on the tile next to the stairs (the room stays connected)
+    {
+      const sc = deadEnds.concat(others)[0], [rx,ry] = at(sc.i,sc.j);
+      if(sc.deg===1){
+        const WOFF = { N:[0,1], S:[1,0], E:[0,0], W:[1,1] }[adj[sc.i][sc.j][0]];
+        CAVE_WELL.x = rx+WOFF[0]; CAVE_WELL.y = ry+WOFF[1];
+      } else { CAVE_WELL.x = 15; CAVE_WELL.y = 18; }          // fallback: corner of the entrance room
+      CAVE[CAVE_WELL.y][CAVE_WELL.x] = 'k';
+    }
+    // Entrance tunnel from the south edge (leads back to the mountain)
+    carve(15,20,16,21,'0'); carve(15,22,16,22,'3');
+    CAVE[23][15]='Q'; CAVE[23][16]='Q';
+  })();
+  // ===== Dungeon (underground): 15 floors, each one a big winding maze =====
+  const DCOLS = 56, DROWS = 38;
+  const DUNGEON = [];
+  for(let y=0;y<DROWS;y++){ const row=[]; for(let x=0;x<DCOLS;x++) row.push('N'); DUNGEON.push(row); }
+  const DUNGEON_START = {}, DUNGEON_STAIRS = {}, DUNGEON_ARENA = { active:false };
+  const DUNGEON_ROOMS = [];
+  function buildFloor(n){
+    for(let y=0;y<DROWS;y++) for(let x=0;x<DCOLS;x++) DUNGEON[y][x] = 'N';
+    DUNGEON_ROOMS.length = 0;
+    DUNGEON_ARENA.active = false;
+    if(BOSS_FLOORS[n]){
+      // Boss floor: one big hall with four pillars. Stairs up at the bottom, stairs down (after the fight) at the far end.
+      const w = 28, h = 18, x0 = 14, y0 = 10, cx = x0 + w/2;
+      for(let y=y0;y<y0+h;y++) for(let x=x0;x<x0+w;x++) DUNGEON[y][x] = 'E';
+      for(const p of [[x0+6,y0+4],[x0+w-8,y0+4],[x0+6,y0+h-7],[x0+w-8,y0+h-7]])
+        for(let dy=0;dy<2;dy++) for(let dx=0;dx<2;dx++) DUNGEON[p[1]+dy][p[0]+dx] = 'N';
+      DUNGEON[y0+h-1][cx] = 'L';
+      DUNGEON_START.spawnX = cx; DUNGEON_START.spawnY = y0+h-2;
+      Object.assign(DUNGEON_ARENA, { active:true, x0, y0, w, h, cx, cy:y0+3 });
+      Object.assign(DUNGEON_STAIRS, { x:cx, y:y0, spawnX:cx, spawnY:y0+1 });
+      if(bossDefeated(n)) DUNGEON[y0][cx] = 'K';
+      return;
+    }
+    const CW = 17, CH = 11;                      // 17 x 11 rooms
+    let seed = (Math.imul(n, 2654435761) ^ 987654321) >>> 0;   // every floor has its own fixed layout
+    const rnd = ()=>{ seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    const at = (i,j)=>[3+3*i, 3+3*j];
+    const carve = (x0,y0,x1,y1,ch)=>{ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++) DUNGEON[y][x]=ch; };
+    const DIRS = { N:[0,-1], S:[0,1], E:[1,0], W:[-1,0] };
+    const OPP = { N:'S', S:'N', E:'W', W:'E' };
+    const inside = (i,j)=> i>=0 && j>=0 && i<CW && j<CH;
+    const adj = [], seen = [], dist = [];
+    for(let i=0;i<CW;i++){
+      adj.push([]); seen.push([]); dist.push([]);
+      for(let j=0;j<CH;j++){ adj[i].push([]); seen[i].push(false); dist[i].push(-1); const [x,y]=at(i,j); carve(x,y,x+1,y+1,'0'); }
+    }
+    function link(i,j,d){
+      const [dx,dy] = DIRS[d], ni = i+dx, nj = j+dy, [x,y] = at(i,j);
+      if(d==='E') carve(x+2,y,x+2,y+1,'0');
+      else if(d==='W') carve(x-1,y,x-1,y+1,'0');
+      else if(d==='S') carve(x,y+2,x+1,y+2,'0');
+      else carve(x,y-1,x+1,y-1,'0');
+      if(!adj[i][j].includes(d)) adj[i][j].push(d);
+      if(!adj[ni][nj].includes(OPP[d])) adj[ni][nj].push(OPP[d]);
+    }
+    const EI = 2 + Math.floor(rnd()*(CW-4)), EJ = CH-1;   // start room: somewhere along the bottom
+    const stack = [[EI,EJ]]; seen[EI][EJ] = true;
+    while(stack.length){
+      const [i,j] = stack[stack.length-1];
+      const opts = Object.keys(DIRS).filter(d=>{ const ni=i+DIRS[d][0], nj=j+DIRS[d][1]; return inside(ni,nj) && !seen[ni][nj]; });
+      if(!opts.length){ stack.pop(); continue; }
+      const d = opts[Math.floor(rnd()*opts.length)];
+      const ni = i+DIRS[d][0], nj = j+DIRS[d][1];
+      link(i,j,d); seen[ni][nj] = true; stack.push([ni,nj]);
+    }
+    for(let k=0;k<45;k++){                        // extra openings: loops and shortcuts
+      const i = Math.floor(rnd()*CW), j = Math.floor(rnd()*CH);
+      const ds = Object.keys(DIRS).filter(d=> inside(i+DIRS[d][0], j+DIRS[d][1]) && !adj[i][j].includes(d));
+      if(ds.length) link(i,j,ds[Math.floor(rnd()*ds.length)]);
+    }
+    dist[EI][EJ] = 0;
+    const q = [[EI,EJ]];
+    while(q.length){
+      const [i,j] = q.shift();
+      for(const d of adj[i][j]){ const ni=i+DIRS[d][0], nj=j+DIRS[d][1]; if(dist[ni][nj]<0){ dist[ni][nj] = dist[i][j]+1; q.push([ni,nj]); } }
+    }
+    const [sx,sy] = at(EI,EJ);
+    DUNGEON[sy+1][sx] = 'L';                      // stairs up
+    DUNGEON_START.spawnX = sx+1; DUNGEON_START.spawnY = sy;
+    const cells = [];
+    for(let i=0;i<CW;i++) for(let j=0;j<CH;j++){
+      if(i===EI && j===EJ) continue;
+      cells.push({ i, j, deg:adj[i][j].length, d:dist[i][j], man:Math.abs(i-EI)+Math.abs(j-EJ) });
+    }
+    const far = cells.filter(c=>c.man>=8).sort((a,b)=>b.d-a.d);
+    const target = far.length ? far[0] : cells.slice().sort((a,b)=>b.d-a.d)[0];
+    const FAR = { N:[1,1], S:[0,0], E:[0,1], W:[1,0] };
+    let arena = null;
+    if(BOSS_FLOORS[n]){
+      // Boss floor: a big arena room at the far end. The stairs down appear once the boss is beaten.
+      const [tx,ty] = at(target.i,target.j);
+      const w = 9, h = 7;
+      const x0 = Math.max(3, Math.min(53-w, tx+1-Math.floor(w/2)));
+      const y0 = Math.max(3, Math.min(35-h, ty+1-Math.floor(h/2)));
+      carve(x0,y0,x0+w-1,y0+h-1,'E');
+      arena = { x0, y0, w, h };
+      Object.assign(DUNGEON_ARENA, { active:true, x0, y0, w, h, cx:x0+Math.floor(w/2), cy:y0+Math.floor(h/2) });
+      const kx = x0+w-1, ky = y0;
+      Object.assign(DUNGEON_STAIRS, { x:kx, y:ky, spawnX:kx-1, spawnY:ky });
+      if(bossDefeated(n)) DUNGEON[ky][kx] = 'K';
+    } else {
+      const [x,y] = at(target.i,target.j);
+      const off = target.deg===1 ? FAR[adj[target.i][target.j][0]] : [1,1];
+      DUNGEON[y+off[1]][x+off[0]] = 'K';          // stairs down
+      Object.assign(DUNGEON_STAIRS, { x:x+off[0], y:y+off[1], spawnX:x+1-off[0], spawnY:y+1-off[1] });
+    }
+    for(const c of cells){
+      if(c===target) continue;
+      const [x,y] = at(c.i,c.j);
+      if(arena && x+1>=arena.x0-1 && x<=arena.x0+arena.w && y+1>=arena.y0-1 && y<=arena.y0+arena.h) continue;
+      DUNGEON_ROOMS.push({ cx:x+0.5, cy:y+0.5, d:c.d });
+    }
+  }
+  const MAP_LAYOUTS = { home:HOME, north:NORTH, river:RIVER, cave:CAVE, dungeon:DUNGEON };
+  function setMapSize(name){
+    if(name==='dungeon'){ COLS = DCOLS; ROWS = DROWS; }
+    else if(name==='river'){ COLS = RCOLS; ROWS = RROWS; }
+    else { COLS = 32; ROWS = 24; }
+  }
+
+  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A','D','Y','W','O','k']);
+
+  let state = {
+    px:6, py:5, dir:'down',
+    gold:50, day:1, seedsByType:{wheat:3, tomato:0, corn:0}, harvestedByType:{wheat:0, tomato:0, corn:0},
+    selectedCrop:'wheat', eggs:0, toolLevel:1,
+    wood:0, mikan:0, treeHits:{}, chopped:{}, fruit:null,
+    stone:0, iron:0, goldOre:0, rockHits:{}, mined:{}, axeLevel:1, pickLevel:1, map:'home',
+    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, sword:false, wells:{home:false,north:false,river:false,cave:false}, wellsOpen:false, enchant:{knock:0,wave:0,fire:0}, swordLevel:1, floor:1, bossDone:{}, bossBeaten:{}, mushroom:0, rodLevel:1, opened:{}, hp:10, stairsOpen:false, dayTime:0, chest:{counts:{}}, northHouse:false, totalHarvest:0, gate2Open:false, gate3Open:false,
+    fish:{ minnow:0, ayu:0, carp:0, yamame:0, catfish:0 },
+    chicken:{ fed:false, eggReady:false },
+    tiles:{} // "x,y" -> {tilled, planted, growth, watered}
+  };
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(SAVE_KEY);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        state = Object.assign(state, parsed);
+        if(state.px===undefined && parsed.x!==undefined){ state.px = parsed.x; state.py = parsed.y; }
+        if(state.toolLevel===undefined) state.toolLevel = 1;
+        if(!state.seedsByType){
+          state.seedsByType = {wheat:parsed.seeds!==undefined?parsed.seeds:3, tomato:0, corn:0};
+          state.harvestedByType = {wheat:parsed.harvested||0, tomato:0, corn:0};
+          state.selectedCrop = 'wheat';
+        }
+      }
+    }catch(e){ console.warn('load failed', e); }
+  }
+  function save(){
+    try{ localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }
+    catch(e){ console.warn('save failed', e); }
+  }
+
+  // 16x16 pixel-art humanoid sprite (chibi villager), reused for player & NPCs
+  const PERSON_SPRITE = [
+    "................",
+    "......HHHH......",
+    ".....HHHHHH.....",
+    ".....HSSSSH.....",
+    ".....HSSSSH.....",
+    ".....SSEESS.....",
+    "......SSSS......",
+    ".......SS.......",
+    "......BBBB......",
+    ".....BBBBBB.....",
+    ".....BBBBBB.....",
+    ".....BB..BB.....",
+    "......BBBB......",
+    "......PPPP......",
+    ".....PP..PP.....",
+    ".....OO..OO.....",
+  ];
+  // Back-facing (up): hide the eyes so it reads as the back of the head
+  const BACK_SPRITE = [
+    "................",
+    "......HHHH......",
+    ".....HHHHHH.....",
+    ".....HHHHHH.....",
+    ".....HHHHHH.....",
+    ".....HHHHHH.....",
+    "......SSSS......",
+    ".......SS.......",
+    "......BBBB......",
+    ".....BBBBBB.....",
+    ".....BBBBBB.....",
+    ".....BB..BB.....",
+    "......BBBB......",
+    "......PPPP......",
+    ".....PP..PP.....",
+    ".....OO..OO.....",
+  ];
+  // Side-facing (right; mirrored for left): single visible eye, arm forward
+  const SIDE_SPRITE = [
+    "................",
+    ".......HHHH.....",
+    "......HHHHHH....",
+    "......HSSSSH....",
+    "......HSSSSH....",
+    ".......SSES.....",
+    "......SSSSS.....",
+    ".......SSS......",
+    ".....BBBBB......",
+    "....BBBBBBB.....",
+    "....BBBBBBBB....",
+    "....BB...BB.....",
+    ".....BBBBB......",
+    ".....PPPP.......",
+    "....PP..PP......",
+    "....OO..OO......",
+  ];
+  // Wheat growth-stage sprites: mature stage uses 2x2 (4-block) grain heads
+  const SPROUT_SPRITE = [
+    "................","................","................","................",
+    "................","................","................","................",
+    "................","................","................","................",
+    "................","......GG........",".......G........",".......G........",
+  ];
+  const GROWING_SPRITE = [
+    "................","................","................","................",
+    "................","................","................","................",
+    "......G..G......","......G..G......","......G..G......","......G..G......",
+    "......G..G......","......G..G......","......G..G......","......G..G......",
+  ];
+  const MATURE_SPRITE = [
+    "................",
+    "................",
+    ".....WW..WW.....",
+    "....WWW..WWW....",
+    ".....Ww..wW.....",
+    "......G..G......",
+    ".....LG..GL.....",
+    "......G..G......",
+    "......G..G......",
+    "......G..G......",
+    "......G..G......",
+    "......G..G......",
+    "......G..G......",
+    "......G..G......",
+    "......G..G......",
+    ".....LG..GL.....",
+  ];
+  const WHEAT_PALETTE = { G:'#5fa85f', W:'#f0c14e' };
+  const WHEAT_RIPE_PALETTE = { G:'#8a9b3f', W:'#f4d06a', w:'#f7e6a3', L:'#b5c25a' };
+
+  const TOMATO_SPRITE = [
+    "................","................",
+    "....RR....RR....","...RRRR..RRRR...",
+    "....RR....RR....","......G..G......",
+    ".....LG..GL.....","......G..G......",
+    "......G..G......","......G..G......",
+    "......G..G......","......G..G......",
+    "......G..G......","......G..G......",
+    "......G..G......",".....LG..GL.....",
+  ];
+  const TOMATO_PALETTE = { R:'#d9432f', G:'#5fa85f', L:'#3f8f3f' };
+
+  const CORN_SPRITE = [
+    "................","................",
+    ".......CC.......","......CCCC......",
+    "......CCCC......",".......CC.......",
+    ".......GG.......",".......GG.......",
+    "......LGG.......",".......GG.......",
+    ".......GG.......",".......GG.L.....",
+    ".......GG.......",".......GG.......",
+    "......LGG.......",".......GG.......",
+  ];
+  const CORN_PALETTE = { C:'#f0c14e', G:'#5fa85f', L:'#3f8f3f' };
+
+  const SEED_SPRITE = [
+    "................","................","................","................",
+    "................","................","................","................",
+    "................","................","................","................",
+    "................","................",".......SS.......",".......SS.......",
+  ];
+  const SEED_PALETTE = { S:'#3d2a1a' };
+
+  const CROPS = {
+    wheat:  { label:'小麦',       emoji:'🌾', seedCost:5, sellPrice:10, sprite:MATURE_SPRITE,  palette:WHEAT_RIPE_PALETTE },
+    tomato: { label:'トマト',     emoji:'🍅', seedCost:8, sellPrice:16, sprite:TOMATO_SPRITE,  palette:TOMATO_PALETTE },
+    corn:   { label:'とうもろこし', emoji:'🌽', seedCost:8, sellPrice:15, sprite:CORN_SPRITE,    palette:CORN_PALETTE },
+  };
+
+  // Detailed tree sprite (layered canopy over a trunk)
+  const TREE_SPRITE = [
+    "................",
+    "......LLLL......",
+    ".....LLLLLL.....",
+    "....LALLLLAL....",
+    "...LLLLLLLLLL...",
+    "..MMLLLLLLLLMM..",
+    "...LLLLLLLLLL...",
+    "....LLALLALL....",
+    ".....LLLLLL.....",
+    "......LLLL......",
+    ".......TT.......",
+    ".......TT.......",
+    ".......TT.......",
+    "......TTTT......",
+    "................",
+    "................",
+  ];
+  const TREE_PALETTE = { L:'#4a8f4a', M:'#3a7a3a', T:'#6b4a2a', A:'#e08030' };
+  const ROCK_SPRITE = makeRows(16,(x,y)=>{
+    const dx=(x-7.5)/7.3, dy=(y-9.5)/5.8, d=dx*dx+dy*dy;
+    if(d>1) return '.';
+    if(dx*0.6+dy*0.8>0.55) return 'D';
+    if(dx+dy<-0.85) return 'H';
+    return 'G';
+  });
+  const ROCK_PALETTE = { G:'#8c9098', H:'#b8bdc6', D:'#666a72' };
+  const GOLD_SPRITE = ROCK_SPRITE.map((row,y)=>row.split('').map((c,x)=>(c!=='.' && (x*3+y*5)%5===0) ? 'Y' : c).join(''));
+  const GOLD_PALETTE = { G:'#8c9098', H:'#b8bdc6', D:'#666a72', Y:'#f2c230' };
+  const TREE_NOFRUIT = TREE_SPRITE.map(r=>r.replace(/A/g,'L'));
+
+  // Detailed house/shop sprite (roof, windows, door)
+  const HOUSE_SPRITE = [
+    "................",
+    ".......RR.......",
+    "......RRRR......",
+    ".....RRRRRR.....",
+    "....RRRRRRRR....",
+    "...RRRRRRRRRR...",
+    "..RRRRRRRRRRRR..",
+    "..FFFFFFFFFFFF..",
+    "..FKKFFFFKKFFF..",
+    "..FKKFFFFKKFFF..",
+    "..FFFFFFFFFFFF..",
+    "..FFFFFDDFFFFF..",
+    "..FFFFFDDFFFFF..",
+    "..FFFFFFFFFFFF..",
+    "................",
+    "................",
+  ];
+  const HOUSE_PALETTE = { R:'#a5503a', F:'#e8dcb8', K:'#6ea8d8', D:'#6b3f26' };
+
+  // Finely textured building pieces (16x16 grid, generated) so the shop
+  // building isn't just flat colored blocks
+  function makeRows(n, fn){
+    const rows = [];
+    for(let y=0;y<n;y++){ let row=''; for(let x=0;x<n;x++) row+=fn(x,y); rows.push(row); }
+    return rows;
+  }
+  const ROOF_TEX = makeRows(16, (x,y)=> (y%5===4 ? 'H' : 'R'));
+  const ROOF_MID_TEX = makeRows(16, (x,y)=> (y<3 ? 'H' : (y%5===4 ? 'H' : 'R')));
+  function wallCell(x,y,hasWindow,hasDoor){
+    if(y===0) return 't';
+    if(hasWindow && y>=4 && y<=9 && x>=5 && x<=10){
+      return (y===4||y===9||x===5||x===10) ? 'k' : 'K';
+    }
+    if(hasDoor && y>=5 && y<=14 && x>=6 && x<=9){
+      if(x===6||x===9||y===5||x===7) return 'd';
+      return 'D';
+    }
+    return (x%4===3) ? 'w' : 'W';
+  }
+  const WALL_WINDOW = makeRows(16,(x,y)=>wallCell(x,y,true,false));
+  const WALL_DOOR = makeRows(16,(x,y)=>wallCell(x,y,false,true));
+  const BUILDING_PALETTE = {
+    R:'#2d3548', H:'#3f4c68', t:'#7a2f26', W:'#b0453a', w:'#8a352b',
+    K:'#6ea8d8', k:'#3d3220', D:'#4a2a1a', d:'#2a1810'
+  };
+  function drawSprite(px, py, sprite, palette, scale, flip){
+    ctx.save();
+    if(flip){ ctx.translate(px + sprite[0].length*scale, py); ctx.scale(-1,1); px = 0; py = 0; }
+    for(let ry=0; ry<sprite.length; ry++){
+      const row = sprite[ry];
+      for(let rx=0; rx<row.length; rx++){
+        const c = row[rx];
+        if(c==='.') continue;
+        ctx.fillStyle = palette[c];
+        ctx.fillRect(px + rx*scale, py + ry*scale, scale, scale);
+      }
+    }
+    ctx.restore();
+  }
+  // Boy player: red cap, blue T-shirt, khaki shorts, bare legs and sneakers
+  const PLAYER_PALETTE = { C:'#d64b3c', H:'#5b3a29', S:'#f2c58a', E:'#2a2118', M:'#c9776b', B:'#4c8fd6', P:'#b08a54', O:'#4a3a2a' };
+  const BOY_LOWER = [
+    "....BBBBBBBB....",
+    "...SBBBBBBBBS...",
+    "....PPPPPPPP....",
+    "....PPP..PPP....",
+    "....SS....SS....",
+    "...OOO....OOO...",
+  ];
+  const BOY_FRONT = [
+    "................",
+    "................",
+    "................",
+    "................",
+    "......CCCC......",
+    ".....CCCCCC.....",
+    ".....CCCCCC.....",
+    "....CCCCCCCC....",
+    "....HSESSESH....",
+    "......SMMS......",
+  ].concat(BOY_LOWER);
+  const BOY_BACK = [
+    "................",
+    "................",
+    "................",
+    "................",
+    "......CCCC......",
+    ".....CCCCCC.....",
+    ".....CCCCCC.....",
+    "....CCCCCCCC....",
+    "....HHHHHHHH....",
+    "......HHHH......",
+  ].concat(BOY_LOWER);
+  const BOY_SIDE = [
+    "................",
+    "................",
+    "................",
+    "................",
+    ".......CCCC.....",
+    "......CCCCCC....",
+    "......CCCCCCCC..",
+    "......HSSSSS....",
+    "......HSSSES....",
+    ".......SSMS.....",
+    ".....BBBBB......",
+    "....BBBBBBSS....",
+    ".....PPPPP......",
+    ".....PPP.PP.....",
+    ".....SS..SS.....",
+    "....OOO..OOO....",
+  ];
+  const NPC_PALETTE    = { H:'#8a4a3a', S:'#f2c58a', E:'#2a2118', B:'#6fa86f', P:'#4a3a2a', O:'#2a2118' };
+  function tileAt(x,y){
+    const c = curLayout[y] ? curLayout[y][x] : '0';
+    if(c==='6' && state.chopped[K(x,y)]!==undefined) return '0';
+    if((c==='g'||c==='A'||c==='P') && state.mined[K(x,y)]!==undefined) return '0';
+    if(c==='Y' && state.opened && state.opened[K(x,y)]!==undefined) return 'W';
+    if(c==='G' && state.gateOpen) return '3';
+    if(c==='Z' && state.gate2Open) return '3';
+    if(c==='T' && state.gate3Open) return '3';
+    if(c==='D' && state.stairsOpen) return 'H';
+    if(state.northHouse){ const hm = HOUSE_MAP[c]; if(hm) return hm; }
+    return c;
+  }
+  function tileX(){ return Math.round(state.px); }
+  function tileY(){ return Math.round(state.py); }
+  function K(x,y){ return (state.map==='north' ? 'n:' : state.map==='river' ? 'r:' : state.map==='cave' ? 'c:' : state.map==='dungeon' ? 'd:' : '') + x + ',' + y; }
+  function key(x,y){ return K(x,y); }
+  function parseKey(k){ const m = k.match(/^(?:(n|r|c|d):)?(-?\d+),(-?\d+)$/); return { map: m[1]==='n'?'north':m[1]==='r'?'river':m[1]==='c'?'cave':m[1]==='d'?'dungeon':'home', x:+m[2], y:+m[3] }; }
+  function farmTile(x,y){
+    const k = key(x,y);
+    if(!state.tiles[k]) state.tiles[k] = {tilled:false, planted:false, growth:0, watered:false, crop:null};
+    return state.tiles[k];
+  }
+
+  function setMsg(t){ document.getElementById('msg').textContent = t; }
+  function updateHud(){
+    document.getElementById('gold').textContent = state.gold;
+    for(const k of Object.keys(CROPS)){                                   // every kind of seed stays visible; the highlighted one is planted
+      document.getElementById('seed_'+k).textContent = state.seedsByType[k]||0;
+      document.querySelector('.seed[data-crop="'+k+'"]').classList.toggle('sel', state.selectedCrop===k);
+    }
+    document.getElementById('eggs').textContent = state.eggs;
+    document.getElementById('wood').textContent = state.wood;
+    document.getElementById('mikan').textContent = state.mikan;
+    document.getElementById('stone').textContent = state.stone;
+    document.getElementById('iron').textContent = state.iron;
+    document.getElementById('milk').textContent = state.milk;
+    document.getElementById('fish').textContent = fishCount();
+    document.getElementById('goldore').textContent = state.goldOre||0;
+    document.getElementById('wool').textContent = state.wool||0;
+    document.getElementById('mushroom').textContent = state.mushroom||0;
+  }
+
+  function collides(px, py){
+    const m = 0.16; // inset so the hitbox is a bit smaller than a full tile
+    const pts = [[px+m,py+m],[px+1-m,py+m],[px+m,py+1-m],[px+1-m,py+1-m]];
+    for(const [cx,cy] of pts){
+      const t = tileAt(Math.floor(cx), Math.floor(cy));
+      if(SOLID.has(t)) return true;
+      if(cx<0||cy<0||cx>=COLS||cy>=ROWS) return true;
+    }
+    return false;
+  }
+
+  const SPEED = 4.2; // tiles per second
+  function updatePosition(dt, vx, vy){
+    if(vx===0 && vy===0) return;
+    const len = Math.hypot(vx,vy) || 1;
+    vx /= len; vy /= len;
+    const nx = state.px + vx*SPEED*dt;
+    if(!collides(nx, state.py)) state.px = nx;
+    const ny = state.py + vy*SPEED*dt;
+    if(!collides(state.px, ny)) state.py = ny;
+    if(Math.abs(vx) > Math.abs(vy)) state.dir = vx>0 ? 'right' : 'left';
+    else state.dir = vy>0 ? 'down' : 'up';
+  }
+
+  const WORK_CHARS = new Set(['h','i']);
+  const GATE_CHARS = new Set(['G','Z','T','D']);
+  const HOUSE_CHARS = new Set(['l','m','n','o','p','q']);
+  const SITE_CHARS = new Set(['r','R','x','s','S','y']);
+  const HOUSE_MAP = { r:'l', R:'m', x:'n', s:'o', S:'p', y:'q' };
+  const HOUSE2_PALETTE = {
+    R:'#7a3b2a', H:'#96503a', t:'#5a3a22', W:'#ead9a8', w:'#cdb883',
+    K:'#8ec3e6', k:'#3d3220', D:'#6b3f26', d:'#3a2418'
+  };
+  const SHOP_CHARS = new Set(['a','b','c','d','e','f']);
+  function nearAny(chars){
+    const tx = tileX(), ty = tileY();
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      if(chars.has(tileAt(tx+dx, ty+dy))) return true;
+    }
+    return false;
+  }
+  function nearType(type){ return nearAny(new Set([type])); }
+
+  function action(){
+    if(wellAnim) return;
+    if(state.map==='dungeon'){ attackAction(); return; }
+    const cur = tileAt(tileX(), tileY());
+    if(cur==='1'){ farmAction(); return; }
+    if(cur==='F'){ fishAction(); return; }
+    if(nearAny(SHOP_CHARS)){ if(state.map==='north') openNorthShop(); else if(state.map==='river') openFishShop(); else openShop(); return; }
+    if(nearType('4')){ talkNPC(); return; }
+    if(nearType('5')){ chickenAction(); return; }
+    if(state.map==='home' && nearRanch()){ ranchAction(); return; }
+    if(state.map==='home' && nearSheepRanch()){ sheepAction(); return; }
+    if(nearType('O')){ openEnchant(); return; }
+    const wk = findNear('k'), gd = findNear('D');
+    if(wk && !(gd && gd[2] < wk[2])){ openWell(); return; }   // next to both the well and the locked stairs: the nearer one
+    if(nearAny(GATE_CHARS)){ openGate(['G','Z','T','D'].find(c=>findNear(c))); return; }
+    if(nearAny(HOUSE_CHARS)){ openSleep(); return; }
+    if(nearAny(SITE_CHARS)){ openSite(); return; }
+    if(nearAny(WORK_CHARS)){ openCraft(); return; }
+    const tr = findNear('6'), rk = findNear('g'), ga = findNear('A'), ch = findNear('Y'), mu = findNear('P');
+    const cands = [[tr,treeAction],[rk,rockAction],[ga,goldAction],[ch,chestAction],[mu,mushroomAction]].filter(c=>c[0]);
+    if(cands.length){
+      cands.sort((a,b)=>a[0][2]-b[0][2]);
+      cands[0][1](cands[0][0]);
+      return;
+    }
+    setMsg('ここでは何もできないみたい');
+  }
+
+  function nearRanch(){
+    const tx = tileX(), ty = tileY();
+    return tx>=19 && tx<=25 && ty>=1 && ty<=8;
+  }
+  function ranchAction(){
+    const cows = state.cows;
+    if(!cows.length){ setMsg('ここは牧場。お店で牛を買うとここに来るよ🐄'); return; }
+    let milk = 0;
+    for(const c of cows){ if(c.milkReady){ c.milkReady = false; milk++; addEffect(Math.round(c.x),Math.round(c.y),'water'); } }
+    if(milk){ state.milk += milk; setMsg(`牛乳を${milk}本搾った🥛`); updateHud(); save(); return; }
+    let fed = 0, short = 0;
+    for(const c of cows){
+      if(c.fed) continue;
+      if((state.harvestedByType.wheat||0)>0){ state.harvestedByType.wheat--; c.fed = true; fed++; addEffect(Math.round(c.x),Math.round(c.y),'plant'); }
+      else short++;
+    }
+    if(fed) setMsg(`小麦を${fed}頭にあげたよ🌾` + (short ? `(あと${short}頭ぶん小麦が足りない)` : ''));
+    else if(short) setMsg('小麦がないよ。畑で育てよう🌾');
+    else setMsg('みんなお腹いっぱいだよ');
+    updateHud(); save();
+  }
+  function updateCows(dt){
+    for(const c of state.cows){
+      c.t = (c.t||0) - dt;
+      if(c.t<=0){
+        c.t = 1 + Math.random()*2.5;
+        if(Math.random()<0.4){ c.vx = 0; c.vy = 0; }
+        else { const a = Math.random()*Math.PI*2; c.vx = Math.cos(a)*0.55; c.vy = Math.sin(a)*0.55; }
+        if(c.vx) c.face = c.vx>0 ? 1 : -1;
+      }
+      c.x = Math.min(23, Math.max(20, c.x + (c.vx||0)*dt));
+      c.y = Math.min(6, Math.max(3, c.y + (c.vy||0)*dt));
+    }
+  }
+  // ---- Sheep pasture (sheep only; they eat tomatoes, give wool) ----
+  function nearSheepRanch(){
+    const tx = tileX(), ty = tileY();
+    return tx>=19 && tx<=25 && ty>=9 && ty<=15;
+  }
+  function sheepAction(){
+    const list = state.sheep;
+    if(!list.length){ setMsg('ここは羊の牧場。お店で羊を買うとここに来るよ🐑'); return; }
+    let wool = 0;
+    for(const sh of list){ if(sh.woolReady){ sh.woolReady = false; wool++; addEffect(Math.round(sh.x),Math.round(sh.y),'pick'); } }
+    if(wool){ state.wool = (state.wool||0) + wool; setMsg(`羊毛を${wool}個刈り取った🧶`); updateHud(); save(); return; }
+    let fed = 0, short = 0;
+    for(const sh of list){
+      if(sh.fed) continue;
+      if((state.harvestedByType.tomato||0)>0){ state.harvestedByType.tomato--; sh.fed = true; fed++; addEffect(Math.round(sh.x),Math.round(sh.y),'plant'); }
+      else short++;
+    }
+    if(fed) setMsg(`トマトを${fed}頭にあげたよ🍅` + (short ? `(あと${short}頭ぶんトマトが足りない)` : ''));
+    else if(short) setMsg('トマトがないよ。畑で育てよう🍅');
+    else setMsg('みんなお腹いっぱいだよ');
+    updateHud(); save();
+  }
+  function updateSheep(dt){
+    for(const c of state.sheep){
+      c.t = (c.t||0) - dt;
+      if(c.t<=0){
+        c.t = 1 + Math.random()*2.5;
+        if(Math.random()<0.4){ c.vx = 0; c.vy = 0; }
+        else { const a = Math.random()*Math.PI*2; c.vx = Math.cos(a)*0.5; c.vy = Math.sin(a)*0.5; }
+        if(c.vx) c.face = c.vx>0 ? 1 : -1;
+      }
+      c.x = Math.min(23, Math.max(20, c.x + (c.vx||0)*dt));
+      c.y = Math.min(14, Math.max(11, c.y + (c.vy||0)*dt));
+    }
+  }
+  function drawSheep(x,y,face,hungry,wool){
+    const u = TILE/16;
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath(); ctx.ellipse(x+TILE/2, y+TILE-2, TILE*0.34, 3, 0, 0, Math.PI*2); ctx.fill();
+    ctx.save();
+    ctx.translate(x+TILE/2, y); ctx.scale(face,1); ctx.translate(-TILE/2, 0);
+    ctx.fillStyle = '#4a4038';
+    ctx.fillRect(4*u,11*u,2*u,4*u); ctx.fillRect(9*u,11*u,2*u,4*u);           // legs
+    if(wool){
+      ctx.fillStyle = '#fbfbf6';
+      for(const [cx,cy,r] of [[5,8.5,3.8],[8,6.8,4],[10.6,8.4,3.6],[7,10,3.6]]){
+        ctx.beginPath(); ctx.arc(cx*u, cy*u, r*u, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.fillStyle = '#e6e6dc'; ctx.fillRect(4*u,11*u,7*u,1*u);
+    } else {
+      ctx.fillStyle = '#e9d9c4'; ctx.fillRect(3*u,7*u,9*u,4*u);                // sheared body
+    }
+    ctx.fillStyle = '#3f3630'; ctx.fillRect(11*u,5*u,4*u,5*u);                 // head
+    ctx.fillStyle = '#f4efe6'; ctx.fillRect(13*u,6*u,1*u,1*u);                 // eye
+    ctx.restore();
+    if(wool || hungry){
+      ctx.font = Math.round(TILE*0.55)+'px sans-serif';
+      ctx.fillText(wool ? '🧶' : '🍅', x+TILE*0.2, y-2);
+    }
+  }
+  function drawCow(x,y,face,hungry,milk){
+    const u = TILE/16;
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath(); ctx.ellipse(x+TILE/2, y+TILE-2, TILE*0.36, 3, 0, 0, Math.PI*2); ctx.fill();
+    ctx.save();
+    ctx.translate(x+TILE/2, y); ctx.scale(face,1); ctx.translate(-TILE/2, 0);
+    ctx.fillStyle = '#f4f4f4';
+    ctx.fillRect(2*u,5*u,10*u,6*u);          // body
+    ctx.fillRect(3*u,11*u,2*u,4*u); ctx.fillRect(9*u,11*u,2*u,4*u); // legs
+    ctx.fillRect(11*u,3*u,4*u,6*u);          // head
+    ctx.fillStyle = '#3a3a3a';
+    ctx.fillRect(4*u,5*u,3*u,3*u); ctx.fillRect(9*u,8*u,3*u,3*u);   // spots
+    ctx.fillRect(3*u,14*u,2*u,1*u); ctx.fillRect(9*u,14*u,2*u,1*u); // hooves
+    ctx.fillRect(1*u,5*u,1*u,4*u);           // tail
+    ctx.fillRect(13*u,4*u,1*u,1*u);          // eye
+    ctx.fillStyle = '#e8a0a0'; ctx.fillRect(14*u,7*u,2*u,2*u); // nose
+    ctx.fillStyle = '#e0d0a0'; ctx.fillRect(12*u,2*u,1*u,1*u); ctx.fillRect(14*u,2*u,1*u,1*u); // horns
+    ctx.restore();
+    if(milk || hungry){
+      ctx.font = Math.round(TILE*0.55)+'px sans-serif';
+      ctx.fillText(milk ? '🥛' : '🌾', x+TILE*0.2, y-2);
+    }
+  }
+
+  // ---- Toll gates ----
+  const GATES = {
+    G:{ cost:500,  key:'gateOpen',  title:'🚪 北の山への門', desc:'通行料500Gを払うと門が開いて、北の山に行けるようになります。', done:'門が開いた!北の山へ行けるよ⛰️' },
+    D:{ cost:10000, key:'stairsOpen', title:'🪜 地下への階段', desc:'10000Gを払うと階段が使えるようになり、地下ダンジョンに行けます。ダンジョンでライフがなくなると、手荷物とお金を全部失います!(家に預けたものは無事)', done:'階段が開いた!地下ダンジョンへ行けるよ🪜' },
+    T:{ cost:5000, key:'gate3Open', title:'🚪 洞窟への門', desc:'通行料5000Gを払うと門が開いて、山の奥の洞窟に行けるようになります。', done:'門が開いた!洞窟へ行けるよ🕳️' },
+    Z:{ cost:2000, key:'gate2Open', title:'🚪 川の国への門', desc:'通行料2000Gを払うと門が開いて、川と橋と釣り場のあるエリアに行けるようになります。', done:'門が開いた!川の国へ行けるよ🏞️' },
+  };
+  let curGate = 'G';
+  function openGate(ch){
+    curGate = ch || 'G';
+    const g = GATES[curGate];
+    document.getElementById('gateTitle').textContent = g.title;
+    document.getElementById('gateDesc').textContent = g.desc;
+    document.getElementById('gateCostLabel').textContent = `通行料 ${g.cost}G`;
+    document.getElementById('gateInfo').textContent = `所持金: ${state.gold}G`;
+    document.getElementById('gateModal').classList.add('open');
+  }
+  document.getElementById('closeGate').onclick = ()=>document.getElementById('gateModal').classList.remove('open');
+  document.getElementById('payGate').onclick = ()=>{
+    const g = GATES[curGate];
+    if(state.gold<g.cost){ document.getElementById('gateInfo').textContent = `お金が足りないよ(あと${g.cost-state.gold}G)`; return; }
+    state.gold -= g.cost; state[g.key] = true;
+    document.getElementById('gateModal').classList.remove('open');
+    updateHud(); save();
+    setMsg(g.done);
+  };
+  document.getElementById('buyCow').onclick = ()=>{
+    if(state.cows.length>=4){ document.getElementById('shopInfo').textContent = '牧場はもう満員だよ(最大4頭)'; return; }
+    if(state.gold<300){ document.getElementById('shopInfo').textContent = 'お金が足りないよ(300G必要)'; return; }
+    state.gold -= 300;
+    state.cows.push({ x:20+Math.random()*3, y:3+Math.random()*3, fed:false, milkReady:false, face:1 });
+    updateHud();
+    document.getElementById('shopInfo').textContent = '牛を買ったよ🐄 店の東の牧場にいるよ。小麦をあげてね';
+    save();
+  };
+
+  document.getElementById('buySheep').onclick = ()=>{
+    if(state.sheep.length>=4){ document.getElementById('shopInfo').textContent = '羊の牧場はもう満員だよ(最大4頭)'; return; }
+    if(state.gold<250){ document.getElementById('shopInfo').textContent = 'お金が足りないよ(250G必要)'; return; }
+    state.gold -= 250;
+    state.sheep.push({ x:20+Math.random()*3, y:11+Math.random()*3, fed:false, woolReady:false, face:1 });
+    updateHud();
+    document.getElementById('shopInfo').textContent = '羊を買ったよ🐑 牛の牧場の南の牧場にいるよ。トマトをあげてね';
+    save();
+  };
+
+  // ---- Sleeping: only at a house ----
+  function openSleep(){ document.getElementById('sleepModal').classList.add('open'); }
+  document.getElementById('closeSleep').onclick = ()=>document.getElementById('sleepModal').classList.remove('open');
+  document.getElementById('doSleep').onclick = ()=>{
+    document.getElementById('sleepModal').classList.remove('open');
+    sleep();
+  };
+
+  // ---- River tackle shop ----
+  const FISH_MULT = 1.3, MUSH_PRICE = 15, ROD_COST = [1500, 5000];
+  const fishPrice = k=>Math.round(FISH[k].price*FISH_MULT);
+  function renderFishShop(msg){
+    let ft = 0, fc = 0;
+    for(const k of Object.keys(FISH)){ const n = state.fish[k]||0; fc += n; ft += n*fishPrice(k); }
+    document.getElementById('fs_fish').textContent = `${fc}匹 → ${ft}G`;
+    const mu = state.mushroom||0;
+    document.getElementById('fs_mush').textContent = `${mu}個 → ${mu*MUSH_PRICE}G`;
+    const lv = state.rodLevel||1;
+    document.getElementById('fs_rod').textContent = lv>=3 ? 'Lv3 (最大)' : `Lv${lv}→Lv${lv+1}: ${ROD_COST[lv-1]}G`;
+    document.getElementById('fsUpgradeRod').style.display = lv>=3 ? 'none' : '';
+    document.getElementById('fishShopInfo').textContent = msg || `所持金: ${state.gold}G`;
+  }
+  function openFishShop(){ document.getElementById('fishShopModal').classList.add('open'); renderFishShop(); }
+  document.getElementById('closeFishShop').onclick = ()=>document.getElementById('fishShopModal').classList.remove('open');
+  document.getElementById('fsSellFish').onclick = ()=>{
+    let total = 0, n = 0;
+    for(const k of Object.keys(FISH)){ const c = state.fish[k]||0; total += c*fishPrice(k); n += c; state.fish[k] = 0; }
+    if(!total){ renderFishShop('売れる魚がないよ'); return; }
+    state.gold += total; updateHud(); save();
+    renderFishShop(`魚${n}匹が売れて+${total}G!`);
+  };
+  document.getElementById('fsSellMush').onclick = ()=>{
+    const n = state.mushroom||0;
+    if(n<=0){ renderFishShop('売れるきのこがないよ'); return; }
+    state.gold += n*MUSH_PRICE; state.mushroom = 0; updateHud(); save();
+    renderFishShop(`きのこ${n}個が売れて+${n*MUSH_PRICE}G!`);
+  };
+  document.getElementById('fsUpgradeRod').onclick = ()=>{
+    const lv = state.rodLevel||1;
+    if(lv>=3) return;
+    const cost = ROD_COST[lv-1];
+    if(state.gold<cost){ renderFishShop(`お金が足りないよ(${cost}G必要)`); return; }
+    state.gold -= cost; state.rodLevel = lv+1; updateHud(); save();
+    renderFishShop(`釣竿がLv${state.rodLevel}になった!`);
+  };
+
+  // ---- Storage at home (deposit / withdraw) ----
+  const STORE_ITEMS = [
+    { id:'gold', icon:'💰', label:'お金', unit:100 },
+    { id:'eggs', icon:'🥚', label:'卵' }, { id:'wood', icon:'🪵', label:'木材' },
+    { id:'stone', icon:'🪨', label:'石' }, { id:'iron', icon:'🔩', label:'鉄' },
+    { id:'goldOre', icon:'🥇', label:'金鉱石' }, { id:'mikan', icon:'🍊', label:'みかん' },
+    { id:'milk', icon:'🥛', label:'牛乳' }, { id:'wool', icon:'🧶', label:'羊毛' }, { id:'mushroom', icon:'🍄', label:'きのこ' },
+    { id:'crop:wheat', icon:'🌾', label:'小麦' }, { id:'crop:tomato', icon:'🍅', label:'トマト' },
+    { id:'crop:corn', icon:'🌽', label:'とうもろこし' },
+    { id:'fish:minnow', icon:'🐟', label:'小魚' }, { id:'fish:ayu', icon:'🐟', label:'アユ' },
+    { id:'fish:carp', icon:'🐠', label:'コイ' }, { id:'fish:yamame', icon:'🐡', label:'ヤマメ' },
+    { id:'fish:catfish', icon:'🐋', label:'大ナマズ' },
+  ];
+  let storeAmt = 1;
+  function invGet(id){
+    if(id.startsWith('crop:')) return state.harvestedByType[id.slice(5)]||0;
+    if(id.startsWith('fish:')) return state.fish[id.slice(5)]||0;
+    return state[id]||0;
+  }
+  function invSet(id,v){
+    if(id.startsWith('crop:')) state.harvestedByType[id.slice(5)] = v;
+    else if(id.startsWith('fish:')) state.fish[id.slice(5)] = v;
+    else state[id] = v;
+  }
+  function chestCounts(){ if(!state.chest || !state.chest.counts) state.chest = { counts:{} }; return state.chest.counts; }
+  function moveItem(id, dir){
+    const it = STORE_ITEMS.find(i=>i.id===id), unit = it.unit||1, counts = chestCounts();
+    const want = storeAmt==='all' ? Infinity : storeAmt*unit;
+    const n = Math.min(want, dir==='in' ? invGet(id) : (counts[id]||0));
+    if(n<=0){ renderStorage('動かせるものがないよ'); return; }
+    if(dir==='in'){ invSet(id, invGet(id)-n); counts[id] = (counts[id]||0)+n; }
+    else { counts[id] = (counts[id]||0)-n; invSet(id, invGet(id)+n); }
+    updateHud(); save();
+    renderStorage(`${it.icon}${it.label} ${n}${id==='gold'?'G':'個'}を${dir==='in'?'預けた':'出した'}`);
+  }
+  function renderStorage(msg){
+    document.querySelectorAll('.amtBtn').forEach(b=>{
+      const on = String(storeAmt)===b.dataset.amt;
+      b.style.background = on ? 'var(--accent)' : ''; b.style.color = on ? '#fff' : '';
+    });
+    const list = document.getElementById('storageList'); list.innerHTML = '';
+    const counts = chestCounts(); let shown = 0;
+    for(const it of STORE_ITEMS){
+      const inv = invGet(it.id), st = counts[it.id]||0, u = it.id==='gold' ? 'G' : '';
+      if(inv<=0 && st<=0) continue;
+      shown++;
+      const row = document.createElement('div'); row.className = 'shop-item';
+      const span = document.createElement('span');
+      span.innerHTML = `${it.icon} ${it.label}<br><small>手荷物 ${inv}${u} / 家 ${st}${u}</small>`;
+      const box = document.createElement('span');
+      const b1 = document.createElement('button'); b1.textContent = '預ける'; b1.onclick = ()=>moveItem(it.id,'in');
+      const b2 = document.createElement('button'); b2.textContent = '出す'; b2.onclick = ()=>moveItem(it.id,'out');
+      box.appendChild(b1); box.appendChild(document.createTextNode(' ')); box.appendChild(b2);
+      row.appendChild(span); row.appendChild(box); list.appendChild(row);
+    }
+    if(!shown){ const p = document.createElement('p'); p.className = 'sub'; p.textContent = '預けられるものも、預けたものもまだないよ'; list.appendChild(p); }
+    document.getElementById('storageInfo').textContent = msg || '';
+  }
+  document.querySelectorAll('.amtBtn').forEach(b=>b.addEventListener('click', ()=>{
+    storeAmt = b.dataset.amt==='all' ? 'all' : +b.dataset.amt; renderStorage();
+  }));
+  document.getElementById('openStorage').onclick = ()=>{
+    document.getElementById('sleepModal').classList.remove('open');
+    document.getElementById('storageModal').classList.add('open');
+    renderStorage();
+  };
+  document.getElementById('closeStorage').onclick = ()=>document.getElementById('storageModal').classList.remove('open');
+
+  // ---- Magic table: enchant the sword (needs lots of gold ore and assorted goods) ----
+  const ENCHANTS = {
+    knock: { icon:'💥', name:'ノックバック',
+      desc: lv=>`斬った敵を${KNOCK_DIST[lv]}マス弾き飛ばし、${KNOCK_STUN[lv]}秒ひるませる`,
+      costs: [
+        [['wool',5],['wood',20],['stone',10],['goldOre',4]],
+        [['wool',12],['iron',15],['eggs',10],['goldOre',10],['gold',1000]],
+        [['wool',25],['iron',30],['milk',15],['goldOre',20],['gold',3000]],
+      ] },
+    wave: { icon:'🌊', name:'波動',
+      desc: lv=>`斬るたびに波動が飛ぶ(威力${Math.round(WAVE_FACTOR[lv]*100)}%・射程${WAVE_RANGE[lv]}マス・貫通)`,
+      costs: [
+        [['milk',10],['mushroom',10],['iron',10],['goldOre',6]],
+        [['milk',20],['mushroom',25],['iron',20],['goldOre',15],['gold',2000]],
+        [['milk',30],['fish:carp',5],['iron',35],['goldOre',30],['gold',6000]],
+      ] },
+    fire: { icon:'🔥', name:'火炎',
+      desc: lv=>`斬った敵を${FIRE_DUR[lv]}秒燃やす(毎秒${FIRE_DPS[lv]}ダメージ${lv>=3?'・まわりに燃え移る':''})`,
+      costs: [
+        [['crop:tomato',10],['crop:corn',10],['wood',30],['goldOre',10]],
+        [['crop:tomato',25],['fish:yamame',2],['iron',25],['goldOre',22],['gold',4000]],
+        [['crop:tomato',50],['fish:yamame',5],['iron',40],['goldOre',40],['gold',10000]],
+      ] },
+  };
+  function itemInfo(id){ return STORE_ITEMS.find(i=>i.id===id) || { icon:'', label:id }; }
+  function renderEnchant(msg){
+    const list = document.getElementById('enchantList'); list.innerHTML = '';
+    state.enchant = state.enchant || { knock:0, wave:0, fire:0 };
+    if(!state.sword){
+      const p = document.createElement('p'); p.className = 'sub'; p.textContent = '剣がない…先に作業台で剣を作ろう。'; list.appendChild(p);
+    } else {
+      for(const id of Object.keys(ENCHANTS)){
+        const en = ENCHANTS[id], lv = state.enchant[id]||0;
+        const box = document.createElement('div');
+        box.style.cssText = 'padding:8px 0;border-bottom:1px dashed var(--sub);font-size:0.85rem;';
+        const head = document.createElement('div');
+        head.innerHTML = `<b>${en.icon} ${en.name}</b> Lv${lv}${lv>=3 ? ' (最大)' : ''}`;
+        box.appendChild(head);
+        const now = document.createElement('div'); now.className = 'sub';
+        now.textContent = lv>0 ? `いまの効果: ${en.desc(lv)}` : 'まだ付いていない';
+        box.appendChild(now);
+        if(lv<3){
+          const nx = document.createElement('div'); nx.className = 'sub';
+          nx.textContent = `Lv${lv+1}の効果: ${en.desc(lv+1)}`;
+          box.appendChild(nx);
+          for(const [cid,n] of en.costs[lv]){
+            const have = invGet(cid), info = itemInfo(cid), u = cid==='gold' ? 'G' : '';
+            const line = document.createElement('div'); line.className = 'sub';
+            line.textContent = `${have>=n ? '✅' : '⬜'} ${info.icon}${info.label} ${have}${u}/${n}${u}`;
+            box.appendChild(line);
+          }
+          const b = document.createElement('button'); b.className = 'close-shop'; b.textContent = `${en.name} Lv${lv+1} を付与する`;
+          b.onclick = ()=>applyEnchant(id);
+          box.appendChild(b);
+        }
+        list.appendChild(box);
+      }
+    }
+    document.getElementById('enchantInfo').textContent = msg || '';
+  }
+  function applyEnchant(id){
+    const en = ENCHANTS[id], lv = state.enchant[id]||0;
+    if(!state.sword || lv>=3) return;
+    const cost = en.costs[lv];
+    if(!cost.every(([cid,n])=>invGet(cid)>=n)){ renderEnchant('材料が足りないよ'); return; }
+    for(const [cid,n] of cost) invSet(cid, invGet(cid)-n);
+    state.enchant[id] = lv+1;
+    updateHud(); save();
+    renderEnchant(`${en.icon}${en.name}がLv${lv+1}になった!`);
+  }
+  function openEnchant(){ document.getElementById('enchantModal').classList.add('open'); renderEnchant(); }
+  document.getElementById('closeEnchant').onclick = ()=>document.getElementById('enchantModal').classList.remove('open');
+
+  // ---- Wells: fast travel between wells (unlock once for 2000G) ----
+  const WELLS = { home:{x:14,y:11}, north:{x:15,y:12}, river:{x:6,y:20}, cave:CAVE_WELL };
+  const WELL_COST = 2000;
+  const IN_HOP = 0.4, IN_SINK = 0.55, IN_FADE = 0.3, OUT_RISE = 0.5, OUT_HOP = 0.4, OUT_FADE = 0.3;
+  let wellAnim = null;        // the jump-in / climb-out cutscene
+  let curWell = null;         // the well the player is standing next to
+  function renderWell(msg){
+    const list = document.getElementById('wellList'); list.innerHTML = '';
+    const desc = document.getElementById('wellDesc'), here = state.map;
+    if(!state.wells[here]){
+      desc.textContent = `この井戸に${WELL_COST}Gを払うと解放されて、解放ずみの他の井戸と行き来できるようになります。`;
+      const row = document.createElement('div'); row.className = 'shop-item';
+      const span = document.createElement('span'); span.textContent = `この井戸を解放 ${WELL_COST}G`;
+      const b = document.createElement('button'); b.textContent = '払う'; b.onclick = payWell;
+      row.appendChild(span); row.appendChild(b); list.appendChild(row);
+    } else {
+      desc.textContent = '行き先を選ぶと、井戸に飛び込みます。行き先の井戸は、先に行って解放しておく必要があります。';
+      for(const name of Object.keys(WELLS)){
+        if(name===here) continue;
+        const row = document.createElement('div'); row.className = 'shop-item';
+        const span = document.createElement('span'); span.textContent = `${MAP_NAMES[name]}の井戸`;
+        row.appendChild(span);
+        if(state.wells[name]){
+          const b = document.createElement('button'); b.textContent = '行く'; b.onclick = ()=>startWellTravel(name);
+          row.appendChild(b);
+        } else {
+          const tag = document.createElement('small'); tag.textContent = '未解放'; row.appendChild(tag);
+        }
+        list.appendChild(row);
+      }
+    }
+    document.getElementById('wellInfo').textContent = msg || `所持金: ${state.gold}G`;
+  }
+  function openWell(){
+    curWell = findNear('k');
+    if(!curWell) return;
+    document.getElementById('wellModal').classList.add('open'); renderWell();
+  }
+  function payWell(){
+    if(state.wells[state.map]) return;
+    if(state.gold<WELL_COST){ renderWell(`お金が足りないよ(あと${WELL_COST-state.gold}G)`); return; }
+    state.gold -= WELL_COST; state.wells[state.map] = true; updateHud(); save();
+    renderWell('この井戸を解放した!');
+  }
+  document.getElementById('closeWell').onclick = ()=>document.getElementById('wellModal').classList.remove('open');
+  function startWellTravel(dest){
+    if(!state.wells[state.map] || !state.wells[dest] || !curWell || wellAnim || !WELLS[dest]) return;
+    document.getElementById('wellModal').classList.remove('open');
+    wellAnim = { phase:'in', t:0, dest, sx:state.px, sy:state.py, wx:curWell[0], wy:curWell[1], splashed:false };
+  }
+  function warpToWell(name){
+    state.map = name; setMapSize(name); curLayout = MAP_LAYOUTS[name];
+    enemies = []; waves = []; bossShots = []; hazards = []; invuln = 0; atkCool = 0;
+    effects = []; actionAnim = null; fishing.phase = 'idle';
+    const w = WELLS[name];
+    let land = [w.x, w.y+1];
+    for(const d of [[0,1],[1,0],[-1,0],[0,-1]]){
+      const x = w.x+d[0], y = w.y+d[1];
+      const tt = tileAt(x,y);
+      if(x>=0 && y>=0 && x<COLS && y<ROWS && !SOLID.has(tt) && !'HKLuvUVXQ'.includes(tt)){ land = [x,y]; break; }
+    }
+    state.px = land[0]; state.py = land[1]; state.dir = 'down';
+    updateMapName();
+    setMsg(`${MAP_NAMES[name]}の井戸から出てきた`);
+    save();
+  }
+  function updateWell(dt){
+    const a = wellAnim; a.t += dt;
+    if(a.phase==='in'){
+      if(!a.splashed && a.t >= IN_HOP){ a.splashed = true; addEffect(a.wx, a.wy, 'water'); }
+      if(a.t >= IN_HOP + IN_SINK + IN_FADE){                          // the screen is black: pop out of the other well
+        warpToWell(a.dest);
+        const w = WELLS[a.dest];
+        wellAnim = { phase:'out', t:0, wx:w.x, wy:w.y, lx:state.px, ly:state.py, splashed:false, landed:false };
+      }
+    } else {
+      if(!a.splashed && a.t >= 0.12){ a.splashed = true; addEffect(a.wx, a.wy, 'water'); }
+      if(!a.landed && a.t >= OUT_RISE + OUT_HOP){ a.landed = true; addEffect(a.lx, a.ly, 'water'); }
+      if(a.t >= OUT_RISE + OUT_HOP + 0.05) wellAnim = null;
+    }
+  }
+  function wellFadeAlpha(){
+    if(!wellAnim) return 0;
+    const a = wellAnim;
+    if(a.phase==='in') return Math.max(0, Math.min(1, (a.t - (IN_HOP + IN_SINK*0.6)) / (IN_SINK*0.4 + IN_FADE)));
+    return Math.max(0, Math.min(1, 1 - a.t/OUT_FADE));
+  }
+  // The jump: hop onto the rim, sink behind the front wall (clipped at the rim); coming out is the reverse
+  function drawPlayerWell(camX, camY){
+    const a = wellAnim, scale = TILE/16, u = TILE/16;
+    const ease = q=> q<=0 ? 0 : q>=1 ? 1 : q*q*(3-2*q);
+    const Y0 = a.wy - 0.4625;                       // sprite top that puts the feet on the water line
+    let X, Y, clip = false, shadow = true;
+    if(a.phase==='in'){
+      if(a.t < IN_HOP){
+        const q = a.t/IN_HOP, e = ease(q);
+        X = a.sx + (a.wx-a.sx)*e; Y = a.sy + (Y0-a.sy)*e - Math.sin(q*Math.PI)*0.45;
+      } else {
+        const q = Math.min(1, (a.t-IN_HOP)/IN_SINK);
+        X = a.wx; Y = Y0 + ease(q)*1.1; clip = true; shadow = false;
+      }
+    } else if(a.t < OUT_RISE){
+      const q = a.t/OUT_RISE;
+      X = a.wx; Y = Y0 + (1-ease(q))*1.1; clip = true; shadow = false;
+    } else {
+      const q = Math.min(1, (a.t-OUT_RISE)/OUT_HOP), e = ease(q);
+      X = a.wx + (a.lx-a.wx)*e; Y = Y0 + (a.ly-Y0)*e - Math.sin(q*Math.PI)*0.6;
+    }
+    const px = (X-camX)*TILE, py = (Y-camY)*TILE;
+    if(shadow){
+      ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      ctx.beginPath(); ctx.ellipse(px+TILE/2, py+TILE-3, TILE*0.26, 3.5, 0, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.save();
+    if(clip){
+      const rim = (a.wy-camY)*TILE + 8.5*u;
+      ctx.beginPath(); ctx.rect((a.wx-camX)*TILE - TILE, -10000, TILE*3, rim + 10000); ctx.clip();
+    }
+    drawSprite(px, py, BOY_FRONT, PLAYER_PALETTE, scale, false);
+    ctx.restore();
+  }
+
+  // ---- House construction site (north map) ----
+  const SITE_COST = { gold:2500, wood:50, stone:40, iron:15 };
+  const SITE_ICON = { gold:'💰', wood:'🪵', stone:'🪨', iron:'🔩' };
+  function siteConds(){
+    const lv = Math.max(state.toolLevel, state.axeLevel, state.pickLevel);
+    return [
+      { label:'牛を2頭以上飼う', ok: state.cows.length>=2, now:`${state.cows.length}/2頭` },
+      { label:'いずれかの道具をLv3にする', ok: lv>=3, now:`最高Lv${lv}` },
+      { label:'作物を累計20個収穫する', ok: (state.totalHarvest||0)>=20, now:`${state.totalHarvest||0}/20個` },
+    ];
+  }
+  function siteReady(){
+    return siteConds().every(c=>c.ok) && Object.keys(SITE_COST).every(k=>state[k]>=SITE_COST[k]);
+  }
+  function renderSite(msg){
+    const list = document.getElementById('siteList');
+    list.innerHTML = '';
+    const add = (ok, text)=>{
+      const row = document.createElement('div'); row.className = 'shop-item';
+      const span = document.createElement('span'); span.textContent = (ok?'✅ ':'⬜ ') + text;
+      row.appendChild(span); list.appendChild(row);
+    };
+    for(const c of siteConds()) add(c.ok, `${c.label}(${c.now})`);
+    for(const k of Object.keys(SITE_COST)) add(state[k]>=SITE_COST[k], `${SITE_ICON[k]} ${SITE_COST[k]}${k==='gold'?'G':'個'}を渡す(所持${state[k]})`);
+    document.getElementById('siteInfo').textContent = msg || (siteReady() ? '準備OK!建設できるよ' : 'まだ条件・材料が足りないよ');
+  }
+  function openSite(){ document.getElementById('siteModal').classList.add('open'); renderSite(); }
+  document.getElementById('closeSite').onclick = ()=>document.getElementById('siteModal').classList.remove('open');
+  document.getElementById('buildHouse').onclick = ()=>{
+    if(!siteReady()){ renderSite('まだ条件・材料が足りないよ'); return; }
+    for(const k of Object.keys(SITE_COST)) state[k] -= SITE_COST[k];
+    state.northHouse = true;
+    document.getElementById('siteModal').classList.remove('open');
+    updateHud(); save();
+    setMsg('🏠 家が完成した!家でアクションすると1日を過ごせるよ');
+  };
+
+  // ---- Fishing (only on the pier in the river area) ----
+  const FISH = {
+    minnow:  { label:'小魚',   emoji:'🐟', price:15,  w:55 },
+    ayu:     { label:'アユ',   emoji:'🐟', price:35,  w:28 },
+    carp:    { label:'コイ',   emoji:'🐠', price:60,  w:12 },
+    yamame:  { label:'ヤマメ', emoji:'🐡', price:90,  w:4 },
+    catfish: { label:'大ナマズ', emoji:'🐋', price:200, w:1 },
+  };
+  const fishing = { phase:'idle', t:0, bx:0, by:0 };
+  function fishCount(){ return Object.values(state.fish).reduce((a,b)=>a+b,0); }
+  function fishTarget(){
+    const fdx = state.dir==='left'?-1:state.dir==='right'?1:0;
+    const fdy = state.dir==='up'?-1:state.dir==='down'?1:0;
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]].sort((a,b)=>(b[0]*fdx+b[1]*fdy)-(a[0]*fdx+a[1]*fdy));
+    const tx = tileX(), ty = tileY();
+    for(const [dx,dy] of dirs) for(let d=1;d<=3;d++){
+      if(tileAt(tx+dx*d,ty+dy*d)==='7') return [tx+dx*d, ty+dy*d];
+    }
+    return null;
+  }
+  function pickFish(){
+    const keys = Object.keys(FISH);
+    const lv = state.rodLevel||1, east = state.map==='river' && state.px>=32;   // the east lake has rarer fish
+    const mul = { carp: east?1.15:1, yamame:(1+0.5*(lv-1))*(east?1.3:1), catfish:(1+0.8*(lv-1))*(east?1.4:1) };
+    const w = k=>FISH[k].w*(mul[k]||1);
+    let r = Math.random()*keys.reduce((a,k)=>a+w(k),0);
+    for(const k of keys){ r -= w(k); if(r<=0) return k; }
+    return keys[0];
+  }
+  function fishAction(){
+    if(fishing.phase==='idle'){
+      const tg = fishTarget();
+      if(!tg){ setMsg('水面が近くにないよ'); return; }
+      fishing.phase = 'wait'; fishing.t = Math.max(0.8, 1.5 - 0.3*((state.rodLevel||1)-1) + Math.random()*3); fishing.bx = tg[0]; fishing.by = tg[1];
+      setMsg('釣り糸をたらした…🎣 「❗」が出たらアクション!');
+    } else if(fishing.phase==='wait'){
+      fishing.phase = 'idle';
+      setMsg('早すぎた!逃げられちゃった');
+    } else {
+      const k = pickFish(), f = FISH[k];
+      state.fish[k] = (state.fish[k]||0) + 1;
+      addEffect(fishing.bx, fishing.by, 'water');
+      fishing.phase = 'idle';
+      setMsg(`${f.emoji} ${f.label}が釣れた!(${f.price}G)`);
+      updateHud(); save();
+    }
+  }
+  function updateFishing(dt){
+    if(fishing.phase==='idle') return;
+    if(tileAt(tileX(),tileY())!=='F'){ fishing.phase = 'idle'; return; }
+    fishing.t -= dt;
+    if(fishing.t<=0){
+      if(fishing.phase==='wait'){ fishing.phase = 'bite'; fishing.t = 1.1 + 0.25*((state.rodLevel||1)-1); setMsg('❗ 引いてる!今すぐアクション!'); }
+      else { fishing.phase = 'idle'; setMsg('逃げられた…'); }
+    }
+  }
+  function drawFishing(camX,camY){
+    if(fishing.phase==='idle') return;
+    const sx = (state.px+0.5-camX)*TILE, sy = (state.py+0.4-camY)*TILE;
+    const bite = fishing.phase==='bite';
+    const bx = (fishing.bx+0.5-camX)*TILE;
+    const by = (fishing.by+0.5-camY)*TILE + (bite ? 3+Math.sin(performance.now()/50)*2.5 : Math.sin(performance.now()/300)*1.5);
+    const tipX = sx + (bx-sx)*0.3, tipY = sy - 14;
+    ctx.lineWidth = 2; ctx.strokeStyle = '#6b4a2a';
+    ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(tipX,tipY); ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.moveTo(tipX,tipY); ctx.lineTo(bx,by); ctx.stroke();
+    ctx.fillStyle = '#e04a3a'; ctx.beginPath(); ctx.arc(bx,by,3.5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillRect(bx-3.5,by-0.5,7,1.5);
+    if(bite){ ctx.font = Math.round(TILE*0.7)+'px sans-serif'; ctx.fillText('❗', sx-TILE*0.2, (state.py-camY)*TILE-6); }
+  }
+
+  // ---- Fishing spot marker: a rod leaning on the pier entrance + bobbing icon ----
+  function drawFishingSpot(camX, camY){
+    if(state.map !== 'river') return;
+    const u = TILE/16;
+    for(const [tx,ty] of FISH_SPOTS){
+      const px = (tx-camX)*TILE, py = (ty-camY)*TILE; // pier entrance tile
+      if(px<-TILE*2 || py<-TILE*2 || px>VIEW_COLS*TILE+TILE || py>VIEW_ROWS*TILE+TILE) continue;
+      ctx.lineWidth = 2; ctx.strokeStyle = '#6b4a2a';
+      ctx.beginPath(); ctx.moveTo(px+13*u, py+15*u); ctx.lineTo(px+21*u, py+2*u); ctx.stroke();
+      ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath(); ctx.moveTo(px+21*u, py+2*u); ctx.lineTo(px+21*u, py+9*u); ctx.stroke();
+      ctx.fillStyle = '#e04a3a';
+      ctx.beginPath(); ctx.arc(px+21*u, py+9*u, 2.5, 0, Math.PI*2); ctx.fill();
+      const bob = Math.sin(performance.now()/350) * 3;
+      ctx.font = Math.round(TILE*0.8) + 'px sans-serif';
+      ctx.fillText('🎣', px + TILE*0.1, py - TILE*0.3 + bob);
+    }
+  }
+
+  // ---- Map name label (HTML, under the instructions) ----
+  const MAP_NAMES = { home:'🏡 のんびり村', north:'⛰️ 北の山', river:'🏞️ 川の国', cave:'🕳️ 洞窟', dungeon:'⚔️ 地下ダンジョン' };
+  function updateMapName(){
+    document.getElementById('mapName').textContent = (MAP_NAMES[state.map] || '') + (state.map==='dungeon' ? ` 地下${state.floor||1}階` : '');
+    document.getElementById('btnReturn').style.display = state.map==='dungeon' ? '' : 'none';
+  }
+
+  // ---- Dungeon: 15 floors, enemies, bosses, sword, life ----
+  let enemies = [];
+  let invuln = 0, atkCool = 0, stairLock = false, stairHold = 0, deathPending = false;
+  const ENEMY_DEFS = {
+    slime:    { name:'スライム',   hp:2,  speed:1.4, chase:4.5 },
+    bat:      { name:'コウモリ',   hp:1,  speed:2.3, chase:4.5 },
+    skeleton: { name:'スケルトン', hp:5,  speed:1.6, chase:5 },
+    ghost:    { name:'ゴースト',   hp:4,  speed:1.3, chase:5.5, phase:true },   // floats through walls
+    goblin:   { name:'ゴブリン',   hp:8,  speed:2.0, chase:5.5 },
+    orc:      { name:'オーク',     hp:12, speed:1.5, chase:5 },
+  };
+  const TIER_KINDS = { 1:['slime','bat'], 2:['skeleton','ghost'], 3:['goblin','orc'] };
+  // Attack building blocks. Every attack = telegraph (wind) -> attack (act) -> recover (the opening!)
+  const ATTACK_DEFS = {
+    dash:     { label:'突進',       wind:0.9, speed:9,  dur:0.55, recover:1.5 },
+    leap:     { label:'ジャンプ',   wind:0.8, air:0.5, radius:1.7, recover:1.4 },
+    ring:     { label:'範囲攻撃',   wind:1.0, radius:2.6, recover:1.4 },
+    fan:      { label:'扇状弾',     wind:0.8, count:5, spread:0.9, speed:5.5, recover:1.3 },
+    nova:     { label:'全方位弾',   wind:1.0, count:12, speed:4.2, recover:1.6 },
+    rain:     { label:'降り注ぐ',   wind:0.7, count:7, delay:1.0, radius:1.1, recover:1.4 },
+    summon:   { label:'召喚',       wind:1.2, count:2, recover:1.6 },
+    teleport: { label:'瞬間移動',   wind:0.6, recover:0.9, chain:true },
+  };
+  const BOSS_FLOORS = {
+    3:  { kind:'slime',    name:'キングスライム',     hp:60,  speed:1.3, scale:2.2, gold:120,  shot:'#5fe07a',
+          atks:  [{t:'leap',radius:1.9},{t:'nova',count:8,speed:3.6},{t:'summon',count:2}],
+          atks2: [{t:'rain',count:6,radius:1.2},{t:'leap',radius:2.2,wind:0.6}] },
+    6:  { kind:'bat',      name:'ヴァンパイアバット', hp:110, speed:2.0, scale:2.0, gold:280,  shot:'#b58cff',
+          atks:  [{t:'dash',speed:11,dur:0.6,wind:0.8,recover:1.3},{t:'fan',count:5,spread:1.1},{t:'rain',count:8}],
+          atks2: [{t:'nova',count:10},{t:'dash',speed:12.5,dur:0.7,wind:0.65}] },
+    9:  { kind:'skeleton', name:'スケルトンロード',   hp:200, speed:1.6, scale:2.0, gold:600,  shot:'#efe9d2',
+          atks:  [{t:'dash',speed:8.5},{t:'ring',radius:2.4},{t:'fan',count:3,speed:6},{t:'summon',count:2}],
+          atks2: [{t:'rain',count:9,radius:1.0},{t:'ring',radius:3.0,wind:0.8}] },
+    12: { kind:'ghost',    name:'ゴーストロード',     hp:320, speed:1.5, scale:2.1, gold:1100, shot:'#9fd0ff',
+          atks:  [{t:'teleport'},{t:'nova',count:12},{t:'fan',count:5},{t:'summon',count:2}],
+          atks2: [{t:'rain',count:9},{t:'ring',radius:3.0}] },
+    15: { kind:'orc',      name:'オークキング',       hp:520, speed:1.7, scale:2.3, gold:2500, shot:'#ff9b3a',
+          atks:  [{t:'dash',speed:9.5},{t:'ring',radius:3.2},{t:'leap',radius:2.1},{t:'fan',count:3,speed:6},{t:'summon',count:3}],
+          atks2: [{t:'rain',count:10},{t:'nova',count:12,speed:4.6}] },
+  };
+  const DUNGEON_GROUND = { 1:'#57526a', 2:'#4b5866', 3:'#5d5246' };
+  const SWORD_DMG = [1,2,3,5,8];
+  const SWORD_CD = [0.35,0.32,0.28,0.25,0.22];
+  const SWORD_COLORS = ['#dfe5ee','#9fd8ff','#8fe0a8','#ffd45a','#ff8ae0'];
+  function floorTier(f){ return f<=6 ? 1 : f<=12 ? 2 : 3; }   // floors 1-6 slime/bat, 7-12 skeleton/ghost, 13-15 goblin/orc
+  function makeEnemy(kind,x,y){
+    const d = ENEMY_DEFS[kind];
+    return { kind, x, y, hp:d.hp, maxhp:d.hp, vx:0, vy:0, t:Math.random(), hurt:0, face:1, r:0.72, scale:1 };
+  }
+  // A boss stays down for 3 days, then comes back
+  const BOSS_RESPAWN_DAYS = 3;
+  function bossDefeated(f){
+    state.bossDone = state.bossDone || {};
+    const d = state.bossDone[f];
+    if(d===undefined) return false;
+    if(d===true){ state.bossDone[f] = state.day; return true; }          // old save: count from today
+    if(state.day - d >= BOSS_RESPAWN_DAYS){ delete state.bossDone[f]; return false; }
+    return true;
+  }
+  function makeBoss(f){
+    const b = BOSS_FLOORS[f], e = makeEnemy(b.kind, DUNGEON_ARENA.cx, DUNGEON_ARENA.cy);
+    e.boss = true; e.name = b.name; e.hp = e.maxhp = b.hp; e.speed = b.speed; e.scale = b.scale;
+    e.r = 0.72 + (b.scale-1)*0.45; e.gold = b.gold; e.active = true;
+    e.st = 'intro'; e.stT = 1.6; e.atk = null; e.lastT = ''; e.p2 = false; e.z = 0;   // a short pause before the fight starts
+    return e;
+  }
+  function spawnEnemies(){
+    enemies = [];
+    const f = state.floor||1, kinds = TIER_KINDS[floorTier(f)], boss = BOSS_FLOORS[f];
+    if(boss){                                                    // boss floor: just you and the boss
+      if(!bossDefeated(f)) enemies.push(makeBoss(f));
+      return;
+    }
+    const rooms = DUNGEON_ROOMS.filter(r=>r.d>=3);
+    for(let i=rooms.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); const tmp = rooms[i]; rooms[i] = rooms[j]; rooms[j] = tmp; }
+    for(const r of rooms.slice(0, 55)){
+      enemies.push(makeEnemy(Math.random()<0.6 ? kinds[0] : kinds[1], r.cx, r.cy));
+    }
+  }
+  function inArena(x,y){
+    const a = DUNGEON_ARENA;
+    return a.active && x>=a.x0-0.5 && x<=a.x0+a.w-0.5 && y>=a.y0-0.5 && y<=a.y0+a.h-0.5;
+  }
+  function nudgePos(x,y,dx,dy,dist){
+    const len = Math.hypot(dx,dy) || 1; dx /= len; dy /= len;
+    for(let k=0;k<6;k++){
+      const nx = x + dx*dist/6, ny = y + dy*dist/6;
+      if(!collides(nx,y)) x = nx;
+      if(!collides(x,ny)) y = ny;
+    }
+    return [x,y];
+  }
+  function summonMinions(b, count){
+    const kinds = TIER_KINDS[floorTier(state.floor||1)];
+    const offs = [[-2,0],[2,0],[0,2],[0,-2],[2,2],[-2,2]];
+    for(let i=0;i<(count||3);i++){
+      const o = offs[i%offs.length], p = nudgePos(b.x, b.y, o[0], o[1], 2);
+      enemies.push(makeEnemy(kinds[Math.random()<0.5 ? 0 : 1], p[0], p[1]));
+    }
+    setMsg(`${b.name}が仲間を呼んだ!`);
+  }
+
+  // ---- sword enchantments (effect tables by level 0-3) ----
+  const KNOCK_DIST = [0.7, 1.4, 2.1, 2.8], KNOCK_STUN = [0, 0.3, 0.5, 0.7];
+  const WAVE_FACTOR = [0, 0.6, 0.8, 1.0], WAVE_RANGE = [0, 4.5, 6, 7.5];
+  const FIRE_DPS = [0, 1, 1.5, 2.5], FIRE_DUR = [0, 3, 4, 5];
+  let waves = [];
+  const killAcc = { n:0, gain:0, ore:0, name:'', boss:null };
+  function flushKills(){
+    if(!killAcc.n) return;
+    let msg = killAcc.n===1 ? `${killAcc.name}を倒した!+${killAcc.gain}G` : `${killAcc.n}体倒した!+${killAcc.gain}G`;
+    if(killAcc.ore) msg += ` 金鉱石+${killAcc.ore}`;
+    if(killAcc.boss){
+      const f = state.floor||1;
+      state.bossDone = state.bossDone || {}; state.bossDone[f] = state.day;                   // respawns 3 days later
+      state.bossBeaten = state.bossBeaten || {}; state.bossBeaten[f] = true;                 // (checkpoint stays unlocked)
+      if(f<15){ DUNGEON[DUNGEON_STAIRS.y][DUNGEON_STAIRS.x] = 'K'; msg += ' 下への階段が現れた!'; }
+      else msg += ' ダンジョンを制覇した!';
+    }
+    killAcc.n = 0; killAcc.gain = 0; killAcc.ore = 0; killAcc.name = ''; killAcc.boss = null;
+    updateHud(); save();
+    setMsg(msg);
+  }
+  function igniteEnemy(e, dps, dur, spread){
+    e.burnT = Math.max(e.burnT||0, dur); e.burnDps = dps; e.burnSpread = !!spread; e.burnAcc = e.burnAcc||0;
+  }
+  // Every hit goes through here: damage, knockback, rewards. quiet = no white flash (burn ticks)
+  function damageEnemy(e, dmg, kdx, kdy, kdist, quiet){
+    if(e.dead) return;
+    e.hp -= dmg;
+    if(!quiet) e.hurt = 0.3;
+    if(kdist>0){ const np = nudgePos(e.x, e.y, kdx, kdy, kdist*(e.boss ? 0.3 : 1)); e.x = np[0]; e.y = np[1]; }
+    if(e.hp>0) return;
+    e.dead = true;
+    const i = enemies.indexOf(e); if(i>=0) enemies.splice(i,1);
+    if(e.boss){ for(const o of enemies) o.dead = true; enemies.length = 0; bossShots.length = 0; hazards.length = 0; }   // the fight is over
+    let gain, ore = 0;
+    if(e.boss){ gain = e.gold; ore = 3 + Math.floor((state.floor||1)/3) + Math.floor(Math.random()*3); killAcc.boss = e; }
+    else { gain = 2 + Math.floor(Math.random()*4); if(floorTier(state.floor||1)>=2 && Math.random()<0.04) ore = 1; }
+    state.gold += gain; if(ore) state.goldOre = (state.goldOre||0) + ore;
+    killAcc.n++; killAcc.gain += gain; killAcc.ore += ore;
+    killAcc.name = e.boss ? e.name : ENEMY_DEFS[e.kind].name;
+  }
+  function updateWaves(dt){
+    for(let i=waves.length-1;i>=0;i--){
+      const w = waves[i], step = 9*dt;
+      w.x += w.dx*step; w.y += w.dy*step; w.left -= step;
+      const tt = tileAt(Math.floor(w.x+0.5), Math.floor(w.y+0.5));
+      if(w.left<=0 || SOLID.has(tt)){ waves.splice(i,1); continue; }
+      for(const e of enemies.slice()){
+        if(e.dead || w.hit.has(e)) continue;
+        if(Math.hypot(e.x-w.x, e.y-w.y) < 0.85 + (e.r-0.72)){ w.hit.add(e); damageEnemy(e, w.dmg, w.dx, w.dy, 0.5); }
+      }
+    }
+  }
+  // ---- Boss fights ----
+  let bossShots = [], hazards = [];
+  const inRect = (x,y)=> DUNGEON_ARENA.active && x>=DUNGEON_ARENA.x0+0.2 && x<=DUNGEON_ARENA.x0+DUNGEON_ARENA.w-1.2 && y>=DUNGEON_ARENA.y0+0.2 && y<=DUNGEON_ARENA.y0+DUNGEON_ARENA.h-1.2;
+  function pickBossAttack(e){
+    const B = BOSS_FLOORS[state.floor||1];
+    let pool = B.atks.concat(e.p2 ? B.atks2 : []);
+    pool = pool.filter(a=>!(a.t==='summon' && enemies.filter(x=>!x.boss).length>=4));
+    const other = pool.filter(a=>a.t!==e.lastT);          // never the same attack twice in a row
+    if(other.length) pool = other;
+    const c = pool[Math.floor(Math.random()*pool.length)];
+    return Object.assign({}, ATTACK_DEFS[c.t], c);
+  }
+  function bossStep(e, vx, vy, dt){
+    if(ENEMY_DEFS[e.kind].phase){                          // the ghost lord floats through pillars
+      e.x = Math.min(DUNGEON_ARENA.x0+DUNGEON_ARENA.w-1, Math.max(DUNGEON_ARENA.x0, e.x + vx*dt));
+      e.y = Math.min(DUNGEON_ARENA.y0+DUNGEON_ARENA.h-1, Math.max(DUNGEON_ARENA.y0, e.y + vy*dt));
+      return true;
+    }
+    let moved = false;
+    const nx = e.x + vx*dt; if(!collides(nx,e.y)){ e.x = nx; moved = true; }
+    const ny = e.y + vy*dt; if(!collides(e.x,ny)){ e.y = ny; moved = true; }
+    return moved;
+  }
+  function addHazard(x,y,r,delay){ hazards.push({ x, y, r, t:delay, delay, done:false, fx:0 }); }
+  function fireShot(x,y,ang,speed,color){
+    bossShots.push({ x, y, vx:Math.cos(ang)*speed, vy:Math.sin(ang)*speed, life:4, r:0.28, color });
+  }
+  function startWind(e, a){
+    e.atk = a; e.st = 'wind'; e.stT = a.wind*(e.p2 ? 0.8 : 1); e.lastT = a.t;
+    const cx = e.x+0.5, cy = e.y+0.5, pxc = state.px+0.5, pyc = state.py+0.5, d = Math.hypot(pxc-cx, pyc-cy) || 1;
+    e.dashDx = (pxc-cx)/d; e.dashDy = (pyc-cy)/d;
+    if(a.t==='leap'){
+      e.leapFrom = { x:e.x, y:e.y }; e.leapTo = { x:state.px, y:state.py };
+      addHazard(pxc, pyc, a.radius, e.stT + a.air);          // landing zone is shown from the start of the wind-up
+    } else if(a.t==='ring'){
+      addHazard(cx, cy, a.radius, e.stT);
+    }
+  }
+  function beginAct(e, a){
+    e.st = 'act';
+    const B = BOSS_FLOORS[state.floor||1], cx = e.x+0.5, cy = e.y+0.5, pxc = state.px+0.5, pyc = state.py+0.5;
+    if(a.t==='dash'){ e.stT = a.dur; return; }
+    if(a.t==='leap'){ e.stT = a.air; e.leapT0 = a.air; return; }
+    e.stT = 0.12;
+    if(a.t==='fan'){
+      const base = Math.atan2(pyc-cy, pxc-cx);
+      for(let i=0;i<a.count;i++) fireShot(cx, cy, base + (a.count>1 ? (i/(a.count-1)-0.5)*a.spread : 0), a.speed, B.shot);
+    } else if(a.t==='nova'){
+      const r0 = Math.random()*Math.PI*2;
+      for(let i=0;i<a.count;i++) fireShot(cx, cy, r0 + i*Math.PI*2/a.count, a.speed, B.shot);
+    } else if(a.t==='rain'){
+      const ar = DUNGEON_ARENA;
+      for(let i=0;i<a.count;i++){
+        let hx = pxc, hy = pyc;
+        if(i>0){ const ang = Math.random()*Math.PI*2, rr = 0.8 + Math.random()*4.2; hx += Math.cos(ang)*rr; hy += Math.sin(ang)*rr; }
+        hx = Math.min(ar.x0+ar.w-0.5, Math.max(ar.x0+0.5, hx)); hy = Math.min(ar.y0+ar.h-0.5, Math.max(ar.y0+0.5, hy));
+        addHazard(hx, hy, a.radius, a.delay + i*0.1);        // the boss is open while these fall
+      }
+    } else if(a.t==='summon'){
+      summonMinions(e, a.count);
+    } else if(a.t==='teleport'){
+      for(let k=0;k<14;k++){
+        const ang = Math.random()*Math.PI*2, rr = 2.8 + Math.random()*1.6;
+        const nx = state.px + Math.cos(ang)*rr, ny = state.py + Math.sin(ang)*rr;
+        if(inRect(nx,ny)){ e.x = nx; e.y = ny; break; }
+      }
+    }
+  }
+  function updateBoss(e, dt){
+    const cx = e.x+0.5, cy = e.y+0.5;
+    const dx = state.px+0.5-cx, dy = state.py+0.5-cy, dist = Math.hypot(dx,dy) || 0.001;
+    if(!e.p2 && e.hp<=e.maxhp/2 && e.st!=='intro'){               // second phase: angrier, more attacks, faster
+      e.p2 = true; e.st = 'recover'; e.stT = 1.4; e.atk = null; e.z = 0;
+      setMsg(`${e.name}が怒った!`);
+    }
+    e.stT -= dt;
+    const spd = e.speed * (e.p2 ? 1.25 : 1);
+    if(e.st==='intro'){
+      if(e.stT<=0){ e.st = 'move'; e.stT = 0.6; }
+    } else if(e.st==='move'){
+      if(dist>2.2) bossStep(e, dx/dist*spd, dy/dist*spd, dt);
+      if(e.stT<=0) startWind(e, pickBossAttack(e));
+    } else if(e.st==='wind'){
+      if(e.atk.t==='dash' && e.stT>0.3){ e.dashDx = dx/dist; e.dashDy = dy/dist; }   // aim freezes just before the charge
+      if(e.stT<=0) beginAct(e, e.atk);
+    } else if(e.st==='act'){
+      const a = e.atk;
+      if(a.t==='dash'){
+        const sp = a.speed * (e.p2 ? 1.1 : 1);
+        if(!bossStep(e, e.dashDx*sp, e.dashDy*sp, dt)) e.stT = 0;                    // hit a wall/pillar
+      } else if(a.t==='leap'){
+        const p = Math.min(1, 1 - Math.max(0, e.stT)/e.leapT0);
+        e.x = e.leapFrom.x + (e.leapTo.x-e.leapFrom.x)*p; e.y = e.leapFrom.y + (e.leapTo.y-e.leapFrom.y)*p;
+        e.z = Math.sin(p*Math.PI)*1.5;
+      }
+      if(e.stT<=0){
+        if(a.t==='leap'){ e.x = e.leapTo.x; e.y = e.leapTo.y; e.z = 0; }
+        e.st = 'recover'; e.stT = a.recover * (e.p2 ? 0.85 : 1);                     // the opening
+      }
+    } else if(e.st==='recover'){
+      if(e.stT<=0){
+        e.st = 'move';
+        e.stT = (e.atk && e.atk.chain) ? 0.05 : (e.p2 ? 0.5 + Math.random()*0.6 : 0.9 + Math.random()*0.8);
+      }
+    }
+    e.face = dx>=0 ? 1 : -1;
+    if(e.st!=='recover' && e.st!=='intro' && !(e.z>0.3) && dist<e.r && invuln<=0) hurtPlayer(dx,dy);   // body contact (not while dizzy)
+  }
+  function updateBossFx(dt){
+    for(let i=bossShots.length-1;i>=0;i--){
+      const sh = bossShots[i];
+      sh.x += sh.vx*dt; sh.y += sh.vy*dt; sh.life -= dt;
+      if(sh.life<=0 || SOLID.has(tileAt(Math.floor(sh.x), Math.floor(sh.y)))){ bossShots.splice(i,1); continue; }
+      const ddx = state.px+0.5-sh.x, ddy = state.py+0.5-sh.y;
+      if(invuln<=0 && Math.hypot(ddx,ddy) < sh.r + 0.32){
+        bossShots.splice(i,1);
+        hurtPlayer(ddx,ddy);
+        if(state.map!=='dungeon') return;
+      }
+    }
+    for(let i=hazards.length-1;i>=0;i--){
+      const h = hazards[i];
+      if(!h.done){
+        h.t -= dt;
+        if(h.t<=0){
+          h.done = true; h.fx = 0.35;
+          const ddx = state.px+0.5-h.x, ddy = state.py+0.5-h.y;
+          if(invuln<=0 && Math.hypot(ddx,ddy) < h.r + 0.25){ hurtPlayer(ddx,ddy); if(state.map!=='dungeon') return; }
+        }
+      } else { h.fx -= dt; if(h.fx<=0) hazards.splice(i,1); }
+    }
+  }
+  function drawBossGround(camX, camY){
+    const t = performance.now()/1000;
+    for(const e of enemies){
+      if(!e.boss || e.st!=='wind' || !e.atk) continue;
+      const a = e.atk, cx = (e.x+0.5-camX)*TILE, cy = (e.y+0.5-camY)*TILE;
+      if(a.t==='dash'){
+        const L = a.speed*a.dur*TILE, w = e.r*TILE*1.6;
+        ctx.save(); ctx.translate(cx, cy); ctx.rotate(Math.atan2(e.dashDy, e.dashDx));
+        ctx.fillStyle = `rgba(255,60,50,${0.18+0.12*Math.sin(t*16)})`; ctx.fillRect(0, -w/2, L, w);
+        ctx.strokeStyle = 'rgba(255,110,80,0.85)'; ctx.lineWidth = 2; ctx.strokeRect(0, -w/2, L, w);
+        ctx.restore();
+      } else if(a.t==='fan'){
+        const base = Math.atan2(state.py-e.y, state.px-e.x);
+        ctx.save(); ctx.strokeStyle = 'rgba(255,110,80,0.4)'; ctx.lineWidth = 1.5;
+        for(let i=0;i<a.count;i++){
+          const ang = base + (a.count>1 ? (i/(a.count-1)-0.5)*a.spread : 0);
+          ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx+Math.cos(ang)*6*TILE, cy+Math.sin(ang)*6*TILE); ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+    for(const h of hazards){
+      const hx = (h.x-camX)*TILE, hy = (h.y-camY)*TILE, r = h.r*TILE;
+      if(!h.done){
+        const prog = 1 - Math.max(0, h.t)/h.delay;
+        ctx.fillStyle = 'rgba(255,60,50,0.16)'; ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = `rgba(255,90,60,${0.15+0.3*prog})`; ctx.beginPath(); ctx.arc(hx, hy, r*prog, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,110,80,0.9)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI*2); ctx.stroke();
+      } else {
+        const f = Math.max(0, h.fx)/0.35;
+        ctx.fillStyle = `rgba(255,225,130,${0.6*f})`; ctx.beginPath(); ctx.arc(hx, hy, r*(1+(1-f)*0.15), 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = `rgba(255,255,255,${0.9*f})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI*2); ctx.stroke();
+      }
+    }
+  }
+  function drawBossShots(camX, camY){
+    for(const sh of bossShots){
+      const x = (sh.x-camX)*TILE, y = (sh.y-camY)*TILE;
+      ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = sh.color; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(x-1.5, y-1.5, 2, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  function updateEnemies(dt){
+    if(state.map!=='dungeon') return;
+    updateWaves(dt);
+    updateBossFx(dt);
+    for(const e of enemies.slice()){
+      if(e.dead) continue;
+      e.hurt = Math.max(0, e.hurt - dt);
+      if(e.burnT>0){                                              // burning (fire enchantment)
+        e.burnT -= dt; e.burnAcc = (e.burnAcc||0) + dt;
+        if(e.burnAcc>=0.5){
+          e.burnAcc -= 0.5;
+          damageEnemy(e, e.burnDps*0.5, 0, 0, 0, true);
+          if(e.dead) continue;
+          if(e.burnSpread){
+            for(const o of enemies){
+              if(!o.dead && o!==e && !(o.burnT>0) && Math.hypot(o.x-e.x, o.y-e.y)<1.6 && Math.random()<0.35) igniteEnemy(o, e.burnDps*0.8, 2.5, true);
+            }
+          }
+        }
+      }
+      if(e.boss){ updateBoss(e, dt); if(state.map!=='dungeon') return; continue; }   // bosses run their own pattern (no stun)
+      if(e.stun>0){ e.stun -= dt; continue; }                     // knocked out for a moment
+      const def = ENEMY_DEFS[e.kind];
+      const dx = state.px - e.x, dy = state.py - e.y, dist = Math.hypot(dx,dy);
+      const speed = def.speed, chasing = dist < def.chase;
+      if(chasing){ e.vx = dx/(dist||1)*speed; e.vy = dy/(dist||1)*speed; }
+      else {
+        e.t -= dt;
+        if(e.t<=0){
+          e.t = (e.kind==='bat' ? 0.4 : 1) + Math.random()*1.5;
+          if(Math.random()<0.35){ e.vx = 0; e.vy = 0; }
+          else { const a = Math.random()*Math.PI*2; e.vx = Math.cos(a)*speed*0.6; e.vy = Math.sin(a)*speed*0.6; }
+        }
+      }
+      if(e.vx) e.face = e.vx>0 ? 1 : -1;
+      if(def.phase){                                              // ghosts ignore walls
+        e.x = Math.min(COLS-3, Math.max(2, e.x + e.vx*dt));
+        e.y = Math.min(ROWS-3, Math.max(2, e.y + e.vy*dt));
+      } else {
+        const nx = e.x + e.vx*dt; if(!collides(nx,e.y)) e.x = nx; else if(!chasing) e.t = 0;
+        const ny = e.y + e.vy*dt; if(!collides(e.x,ny)) e.y = ny; else if(!chasing) e.t = 0;
+      }
+      if(dist < e.r && invuln<=0){ hurtPlayer(dx,dy); if(state.map!=='dungeon') return; }
+    }
+    flushKills();
+  }
+  function hurtPlayer(dx,dy){
+    if(deathPending) return;
+    state.hp = Math.max(0, state.hp - 1);   // 1 = half a heart
+    invuln = 1.0;
+    const np = nudgePos(state.px, state.py, dx, dy, 0.8);
+    state.px = np[0]; state.py = np[1];
+    if(state.hp<=0){ openDeath(); return; }
+    setMsg('攻撃を受けた!');
+    save();
+  }
+  // Out of hearts: pay 1000G to get back up on the spot, or give up and lose everything you carry
+  const REVIVE_COST = 1000;
+  function openDeath(){
+    deathPending = true;
+    document.getElementById('deathInfo').textContent = state.gold>=REVIVE_COST ? `所持金: ${state.gold}G` : `お金が足りないよ(${REVIVE_COST}G必要・所持金 ${state.gold}G)`;
+    document.getElementById('deathModal').classList.add('open');
+  }
+  document.getElementById('doRevive').onclick = ()=>{
+    if(state.gold<REVIVE_COST){ document.getElementById('deathInfo').textContent = `お金が足りないよ(${REVIVE_COST}G必要・所持金 ${state.gold}G)`; return; }
+    state.gold -= REVIVE_COST; state.hp = 10; invuln = 3; deathPending = false;
+    document.getElementById('deathModal').classList.remove('open');
+    updateHud(); save();
+    setMsg(`${REVIVE_COST}Gを払って復活した!`);
+  };
+  document.getElementById('giveUp').onclick = ()=>{
+    deathPending = false;
+    document.getElementById('deathModal').classList.remove('open');
+    playerDied();
+  };
+  function playerDied(){
+    state.gold = 0;
+    for(const k of ['eggs','wood','mikan','stone','iron','milk','goldOre','wool','mushroom']) state[k] = 0;
+    for(const k of Object.keys(state.harvestedByType)) state.harvestedByType[k] = 0;
+    for(const k of Object.keys(state.fish)) state.fish[k] = 0;
+    state.hp = 10; invuln = 0;
+    goMap('cave');
+    updateHud(); save();
+    setMsg('力尽きた…手荷物とお金を全部失った(家に預けたものは無事)');
+  }
+  // Moving between floors (fromAbove: arrived by the stairs down; otherwise came back up from below)
+  function changeFloor(n, fromAbove){
+    state.floor = n; buildFloor(n);
+    enemies = []; waves = []; bossShots = []; hazards = []; invuln = 0;
+    if(fromAbove){ state.px = DUNGEON_START.spawnX; state.py = DUNGEON_START.spawnY; }
+    else { state.px = DUNGEON_STAIRS.spawnX; state.py = DUNGEON_STAIRS.spawnY; }
+    state.dir = 'down';
+    spawnEnemies();
+    updateMapName();
+    fadeStart = performance.now();
+    const bossHere = BOSS_FLOORS[n] && !bossDefeated(n);
+    setMsg(bossHere ? `地下${n}階…強い気配がする…!` : `地下${n}階`);
+    save();
+  }
+  // Choosing where to start when going down from the cave (boss floors are checkpoints)
+  // Pay 500G to get back to the cave from anywhere in the dungeon
+  const RETURN_COST = 500;
+  function openReturn(){
+    if(state.map!=='dungeon') return;
+    document.getElementById('returnInfo').textContent = `所持金: ${state.gold}G`;
+    document.getElementById('returnModal').classList.add('open');
+  }
+  document.getElementById('closeReturn').onclick = ()=>document.getElementById('returnModal').classList.remove('open');
+  document.getElementById('doReturn').onclick = ()=>{
+    if(state.gold<RETURN_COST){ document.getElementById('returnInfo').textContent = `お金が足りないよ(${RETURN_COST}G必要)`; return; }
+    state.gold -= RETURN_COST;
+    document.getElementById('returnModal').classList.remove('open');
+    goMap('cave');
+    updateHud(); save();
+    setMsg(`${RETURN_COST}Gを払って洞窟に帰還した`);
+  };
+  document.getElementById('btnReturn').addEventListener('pointerdown', (e)=>{ e.preventDefault(); openReturn(); });
+  function startDungeon(f){
+    document.getElementById('floorModal').classList.remove('open');
+    state.floor = f; goMap('dungeon');
+  }
+  function openFloorSelect(){
+    const opts = [1];
+    for(const b of [3,6,9,12]) if(state.bossBeaten && state.bossBeaten[b]) opts.push(b+1);
+    if(opts.length===1){ startDungeon(1); return; }
+    const list = document.getElementById('floorList'); list.innerHTML = '';
+    for(const f of opts){
+      const row = document.createElement('div'); row.className = 'shop-item';
+      const span = document.createElement('span'); span.textContent = `地下${f}階から` + (f===1 ? '(最初から)' : '');
+      const b = document.createElement('button'); b.textContent = '降りる'; b.onclick = ()=>startDungeon(f);
+      row.appendChild(span); row.appendChild(b); list.appendChild(row);
+    }
+    document.getElementById('floorModal').classList.add('open');
+  }
+  document.getElementById('closeFloor').onclick = ()=>document.getElementById('floorModal').classList.remove('open');
+
+  function attackAction(){
+    if(!state.sword){ setMsg('剣がない!作業台で作ろう⚔️'); return; }
+    if(atkCool>0) return;
+    const lv = state.swordLevel||1, en = state.enchant || {};
+    atkCool = SWORD_CD[lv-1];
+    triggerActionAnim('sword');
+    const dmg = SWORD_DMG[lv-1], reach = 1.05 + 0.08*(lv-1);
+    const fx = state.dir==='left'?-1:state.dir==='right'?1:0;
+    const fy = state.dir==='up'?-1:state.dir==='down'?1:0;
+    const cx = state.px + fx*0.75, cy = state.py + fy*0.75;
+    const kl = en.knock||0, fl = en.fire||0, wl = en.wave||0;
+    for(const e of enemies.slice()){
+      if(e.dead) continue;
+      if(Math.hypot(e.x-cx, e.y-cy) > reach + (e.r-0.72)) continue;
+      damageEnemy(e, dmg, e.x-state.px, e.y-state.py, KNOCK_DIST[kl]);
+      if(e.dead) continue;
+      if(kl && !e.boss) e.stun = Math.max(e.stun||0, KNOCK_STUN[kl]);   // bosses can't be stunned
+      if(fl) igniteEnemy(e, FIRE_DPS[fl], FIRE_DUR[fl], fl>=3);
+    }
+    if(wl){
+      waves.push({ x:state.px+fx*0.7, y:state.py+fy*0.7, dx:fx, dy:fy, dmg:Math.max(1, Math.round(dmg*WAVE_FACTOR[wl])),
+                   left:WAVE_RANGE[wl], range:WAVE_RANGE[wl], hit:new Set() });
+    }
+    flushKills();
+  }
+
+  // ---- enemy drawing ----
+  function drawSlime(cx,by,s,flash,t,ex){
+    const sq = Math.sin(t*6 + ex*2)*0.1, w = TILE*0.78*(1+sq)*s, h = TILE*0.6*(1-sq)*s;
+    ctx.fillStyle = flash ? '#ffffff' : '#55c46a';
+    ctx.beginPath(); ctx.moveTo(cx-w/2, by);
+    ctx.quadraticCurveTo(cx-w/2, by-h*1.3, cx, by-h*1.3);
+    ctx.quadraticCurveTo(cx+w/2, by-h*1.3, cx+w/2, by);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = flash ? '#dddddd' : '#3aa552'; ctx.fillRect(cx-w/2, by-3*s, w, 3*s);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(cx-w*0.28, by-h*0.95, 3*s, 2*s);
+    ctx.fillStyle = '#1e2a20'; ctx.fillRect(cx-w*0.22, by-h*0.6, 2.5*s, 3.5*s); ctx.fillRect(cx+w*0.1, by-h*0.6, 2.5*s, 3.5*s);
+    return by - h*1.3;
+  }
+  function drawBat(cx,by,s,flash,t,ex,ey){
+    const cy = by - 12*s + Math.sin(t*9 + ex*3)*2*s, flap = Math.sin(t*22 + ey*5);
+    ctx.fillStyle = flash ? '#ffffff' : '#5a4a86';
+    ctx.beginPath(); ctx.moveTo(cx-3*s,cy); ctx.lineTo(cx-13*s, cy-(5+flap*5)*s); ctx.lineTo(cx-10*s, cy+3*s); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(cx+3*s,cy); ctx.lineTo(cx+13*s, cy-(5+flap*5)*s); ctx.lineTo(cx+10*s, cy+3*s); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = flash ? '#ffffff' : '#3b2f5c';
+    ctx.beginPath(); ctx.ellipse(cx, cy, 5*s, 6*s, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillRect(cx-4*s, cy-8*s, 2*s, 3*s); ctx.fillRect(cx+2*s, cy-8*s, 2*s, 3*s);
+    ctx.fillStyle = '#ff5a5a'; ctx.fillRect(cx-3*s, cy-2*s, 2*s, 2*s); ctx.fillRect(cx+1*s, cy-2*s, 2*s, 2*s);
+    return cy - 8*s;
+  }
+  function drawGhost(cx,by,s,flash,t,ex){
+    const cy = by - 13*s + Math.sin(t*3 + ex)*2*s, wob = Math.sin(t*6 + ex)*1.5*s;
+    ctx.save(); ctx.globalAlpha = 0.85;
+    ctx.fillStyle = flash ? '#ffffff' : '#dfe8ff';
+    ctx.beginPath(); ctx.arc(cx, cy, 8*s, Math.PI, 0);
+    ctx.lineTo(cx+8*s, cy+9*s+wob); ctx.lineTo(cx+4*s, cy+6*s); ctx.lineTo(cx, cy+9*s-wob);
+    ctx.lineTo(cx-4*s, cy+6*s); ctx.lineTo(cx-8*s, cy+9*s+wob);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#1b1b2e';
+    ctx.beginPath(); ctx.ellipse(cx-3*s, cy-1*s, 1.6*s, 2.4*s, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx+3*s, cy-1*s, 1.6*s, 2.4*s, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx, cy+4*s, 1.8*s, 2.2*s, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    return cy - 8*s;
+  }
+  function drawSkeleton(cx,by,s,flash,t,ex){
+    const bone = flash ? '#ffffff' : '#e8e4d4', sw = Math.sin(t*8 + ex)*1.5*s;
+    ctx.fillStyle = bone;
+    ctx.fillRect(cx-4*s, by-25*s, 8*s, 7*s);                 // skull
+    ctx.fillRect(cx-3*s, by-18*s, 6*s, 2*s);                 // jaw
+    ctx.fillRect(cx-1*s, by-16*s, 2*s, 9*s);                 // spine
+    ctx.fillRect(cx-5*s, by-15*s, 10*s, 1.5*s); ctx.fillRect(cx-4.5*s, by-12*s, 9*s, 1.5*s); ctx.fillRect(cx-4*s, by-9*s, 8*s, 1.5*s);   // ribs
+    ctx.fillRect(cx-3*s, by-7*s+sw, 2*s, 7*s-sw); ctx.fillRect(cx+1*s, by-7*s-sw, 2*s, 7*s+sw);   // legs
+    ctx.fillRect(cx-7*s, by-15*s, 2*s, 8*s); ctx.fillRect(cx+5*s, by-15*s, 2*s, 8*s);              // arms
+    ctx.fillStyle = '#1a1a22'; ctx.fillRect(cx-3*s, by-23*s, 2*s, 2.5*s); ctx.fillRect(cx+1*s, by-23*s, 2*s, 2.5*s);
+    ctx.fillStyle = flash ? '#ffffff' : '#b8bcc4'; ctx.fillRect(cx+6*s, by-24*s, 1.5*s, 10*s);   // sword
+    ctx.fillStyle = '#6b4a2a'; ctx.fillRect(cx+4.5*s, by-14.5*s, 4.5*s, 1.5*s);
+    return by - 25*s;
+  }
+  function drawGoblin(cx,by,s,flash,t,ex){
+    const skin = flash ? '#ffffff' : '#6fb04f', sw = Math.sin(t*10 + ex)*1.5*s;
+    ctx.fillStyle = skin;
+    ctx.fillRect(cx-5*s, by-22*s, 10*s, 8*s);                // head
+    ctx.beginPath(); ctx.moveTo(cx-5*s, by-20*s); ctx.lineTo(cx-10*s, by-23*s); ctx.lineTo(cx-5*s, by-16*s); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(cx+5*s, by-20*s); ctx.lineTo(cx+10*s, by-23*s); ctx.lineTo(cx+5*s, by-16*s); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = flash ? '#eeeeee' : '#7a5a34'; ctx.fillRect(cx-5*s, by-14*s, 10*s, 8*s);
+    ctx.fillStyle = flash ? '#dddddd' : '#5a4028'; ctx.fillRect(cx-4*s, by-6*s+sw, 3*s, 6*s-sw); ctx.fillRect(cx+1*s, by-6*s-sw, 3*s, 6*s+sw);
+    ctx.fillStyle = skin; ctx.fillRect(cx-8*s, by-13*s, 3*s, 6*s); ctx.fillRect(cx+5*s, by-13*s, 3*s, 6*s);
+    ctx.fillStyle = '#ffe14a'; ctx.fillRect(cx-3.5*s, by-20*s, 2*s, 2*s); ctx.fillRect(cx+1.5*s, by-20*s, 2*s, 2*s);
+    ctx.fillStyle = '#1a1a22'; ctx.fillRect(cx-3*s, by-19.5*s, 1*s, 1*s); ctx.fillRect(cx+2*s, by-19.5*s, 1*s, 1*s);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(cx-2*s, by-16*s, 1*s, 1.5*s); ctx.fillRect(cx+1*s, by-16*s, 1*s, 1.5*s);
+    ctx.fillStyle = flash ? '#ffffff' : '#c8ccd4'; ctx.fillRect(cx+8*s, by-17*s, 1.5*s, 7*s);    // dagger
+    return by - 23*s;
+  }
+  function drawOrc(cx,by,s,flash,t,ex){
+    const skin = flash ? '#ffffff' : '#4f8f4a', sw = Math.sin(t*7 + ex)*1.5*s;
+    ctx.fillStyle = skin; ctx.fillRect(cx-6*s, by-27*s, 12*s, 9*s);                                   // head
+    ctx.fillStyle = flash ? '#eeeeee' : '#5a5a66'; ctx.fillRect(cx-8*s, by-18*s, 16*s, 12*s);          // armor
+    ctx.fillStyle = flash ? '#dddddd' : '#3f3f4a'; ctx.fillRect(cx-8*s, by-18*s, 16*s, 3*s);
+    ctx.fillStyle = flash ? '#cccccc' : '#3a2f28'; ctx.fillRect(cx-5*s, by-6*s+sw, 4*s, 6*s-sw); ctx.fillRect(cx+1*s, by-6*s-sw, 4*s, 6*s+sw);
+    ctx.fillStyle = skin; ctx.fillRect(cx-11*s, by-17*s, 3*s, 9*s); ctx.fillRect(cx+8*s, by-17*s, 3*s, 9*s);
+    ctx.fillStyle = '#ff5a3a'; ctx.fillRect(cx-4*s, by-24*s, 2*s, 2*s); ctx.fillRect(cx+2*s, by-24*s, 2*s, 2*s);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(cx-4*s, by-20*s, 1.5*s, 3*s); ctx.fillRect(cx+2.5*s, by-20*s, 1.5*s, 3*s);   // tusks
+    ctx.fillStyle = '#6b4a2a'; ctx.fillRect(cx+10*s, by-26*s, 2*s, 16*s);                              // axe
+    ctx.fillStyle = flash ? '#ffffff' : '#a4a8b0'; ctx.fillRect(cx+10*s, by-27*s, 6*s, 6*s);
+    return by - 27*s;
+  }
+  function drawCrown(cx, top, s){
+    const k = s*0.8;
+    ctx.fillStyle = '#f2c230';
+    ctx.fillRect(cx-5*k, top-3*k, 10*k, 3*k);
+    ctx.beginPath(); ctx.moveTo(cx-5*k, top-3*k); ctx.lineTo(cx-3.5*k, top-7*k); ctx.lineTo(cx-2*k, top-3*k);
+    ctx.lineTo(cx, top-8*k); ctx.lineTo(cx+2*k, top-3*k); ctx.lineTo(cx+3.5*k, top-7*k); ctx.lineTo(cx+5*k, top-3*k);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#e63b4f'; ctx.fillRect(cx-0.8*k, top-2.5*k, 1.6*k, 1.6*k);
+  }
+  function drawEnemies(camX, camY){
+    const t = performance.now()/1000;
+    for(const e of enemies){
+      const s = e.scale||1;
+      const sx = (e.x-camX)*TILE, sy = (e.y-camY)*TILE;
+      if(sx<-TILE*3 || sy<-TILE*3 || sx>VIEW_COLS*TILE+TILE*2 || sy>VIEW_ROWS*TILE+TILE*2) continue;
+      const flash = e.hurt>0 || (e.boss && e.st==='wind' && Math.floor(t*12)%2===0);
+      const cx = sx+TILE/2, by = sy+TILE-3, bb = by - (e.z||0)*TILE;   // bb = body line (lifted while leaping)
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.beginPath(); ctx.ellipse(cx, by, TILE*0.3*s, 3*Math.min(s,1.6), 0, 0, Math.PI*2); ctx.fill();
+      if(e.boss){
+        ctx.strokeStyle = `rgba(255,70,60,${0.35+0.25*Math.sin(t*4)})`; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(cx, by, TILE*0.5*s, 5*s, 0, 0, Math.PI*2); ctx.stroke();
+      }
+      ctx.save();
+      if(e.face<0 && (e.kind==='skeleton' || e.kind==='goblin' || e.kind==='orc')){   // mirror the ones holding a weapon
+        ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.translate(-cx, 0);
+      }
+      let top = by;
+      if(e.kind==='slime') top = drawSlime(cx,bb,s,flash,t,e.x);
+      else if(e.kind==='bat') top = drawBat(cx,bb,s,flash,t,e.x,e.y);
+      else if(e.kind==='ghost') top = drawGhost(cx,bb,s,flash,t,e.x);
+      else if(e.kind==='skeleton') top = drawSkeleton(cx,bb,s,flash,t,e.x);
+      else if(e.kind==='goblin') top = drawGoblin(cx,bb,s,flash,t,e.x);
+      else top = drawOrc(cx,bb,s,flash,t,e.x);
+      ctx.restore();
+      if(e.burnT>0){                                              // flames on burning enemies
+        const fl = Math.sin(t*20 + e.x*5)*2*s;
+        ctx.fillStyle = 'rgba(255,120,30,0.9)';
+        ctx.beginPath(); ctx.moveTo(cx-6*s, by-6*s); ctx.lineTo(cx-3*s+fl, by-17*s); ctx.lineTo(cx, by-6*s); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(cx, by-6*s); ctx.lineTo(cx+3*s-fl, by-19*s); ctx.lineTo(cx+6*s, by-6*s); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = 'rgba(255,225,80,0.9)';
+        ctx.beginPath(); ctx.moveTo(cx-3*s, by-6*s); ctx.lineTo(cx+fl*0.5, by-13*s); ctx.lineTo(cx+3*s, by-6*s); ctx.closePath(); ctx.fill();
+      }
+      if(e.boss){
+        drawCrown(cx, top, s);
+        if(e.st==='recover'){                                     // dizzy stars = the opening
+          ctx.fillStyle = '#ffe14a';
+          for(let i=0;i<3;i++){ const a = t*4 + i*2.1; ctx.fillRect(cx + Math.cos(a)*11*s*0.7 - 2, top - 9*s + Math.sin(a)*3 - 2, 4, 4); }
+        }
+        if(e.st==='wind' && e.atk){                               // announce the attack
+          ctx.save(); ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+          ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.lineWidth = 3; ctx.strokeText(e.atk.label, cx, top - 16*s);
+          ctx.fillStyle = '#ffd0c8'; ctx.fillText(e.atk.label, cx, top - 16*s);
+          ctx.restore();
+        }
+      }
+    }
+  }
+  function drawWaves(camX, camY){
+    for(const w of waves){
+      const sx = (w.x+0.5-camX)*TILE, sy = (w.y+0.5-camY)*TILE, a = Math.atan2(w.dy, w.dx);
+      const fade = 0.35 + 0.65*Math.max(0, w.left/w.range);
+      ctx.save(); ctx.translate(sx, sy); ctx.rotate(a); ctx.lineCap = 'round';
+      ctx.strokeStyle = `rgba(120,220,255,${0.35*fade})`; ctx.lineWidth = 9;
+      ctx.beginPath(); ctx.arc(-6, 0, 13, -1.0, 1.0); ctx.stroke();
+      ctx.strokeStyle = `rgba(200,245,255,${0.95*fade})`; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(-6, 0, 13, -1.0, 1.0); ctx.stroke();
+      ctx.restore();
+    }
+  }
+  function drawBossBar(){
+    if(state.map!=='dungeon') return;
+    const b = enemies.find(e=>e.boss && e.active);
+    if(!b) return;
+    const W = Math.min(240, VIEW_COLS*TILE*0.7), x = (VIEW_COLS*TILE - W)/2, y = VIEW_ROWS*TILE - 24;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x-6, y-19, W+12, 32);
+    ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#ffffff'; ctx.fillText(b.name, x+W/2, y-6);
+    ctx.fillStyle = '#3b1a1f'; ctx.fillRect(x, y, W, 8);
+    ctx.fillStyle = '#e63b4f'; ctx.fillRect(x, y, W*Math.max(0, b.hp/b.maxhp), 8);
+    ctx.strokeStyle = '#1b0f12'; ctx.lineWidth = 1.5; ctx.strokeRect(x, y, W, 8);
+    ctx.restore();
+  }
+  function drawFloorLabel(){
+    if(state.map!=='dungeon') return;
+    const text = `地下${state.floor||1}階`;
+    ctx.save();
+    ctx.font = 'bold 12px sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    const w = ctx.measureText(text).width + 16, x = VIEW_COLS*TILE - w - 8, y = 8, h = 26;
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    if(ctx.roundRect){ ctx.beginPath(); ctx.roundRect(x, y, w, h, 9); ctx.fill(); } else ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#ffffff'; ctx.fillText(text, x+8, y+h/2+1);
+    ctx.restore();
+  }
+  // Life gauge: 5 hand-drawn hearts (each heart = 2 life points = 2 hits' worth of half hearts)
+  function heartPath(x,y,s){
+    ctx.beginPath();
+    ctx.moveTo(x+s*0.5, y+s*0.92);
+    ctx.bezierCurveTo(x-s*0.12, y+s*0.55, x+s*0.05, y-s*0.05, x+s*0.5, y+s*0.28);
+    ctx.bezierCurveTo(x+s*0.95, y-s*0.05, x+s*1.12, y+s*0.55, x+s*0.5, y+s*0.92);
+    ctx.closePath();
+  }
+  function drawHearts(){
+    if(state.map!=='dungeon') return;
+    const s = 17, gap = 4, pad = 6, x0 = 8, y0 = 8;
+    const w = pad*2 + 5*s + 4*gap, h = pad*2 + s;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    if(ctx.roundRect){ ctx.beginPath(); ctx.roundRect(x0, y0, w, h, 9); ctx.fill(); }
+    else ctx.fillRect(x0, y0, w, h);
+    for(let i=0;i<5;i++){
+      const x = x0 + pad + i*(s+gap), y = y0 + pad, v = state.hp - i*2;   // v>=2 full, v==1 half
+      heartPath(x,y,s); ctx.fillStyle = '#3b2a30'; ctx.fill();
+      if(v>=1){
+        ctx.save(); heartPath(x,y,s); ctx.clip();
+        ctx.fillStyle = '#e63b4f';
+        ctx.fillRect(x-2, y-2, v>=2 ? s+4 : s/2+2, s+4);
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.fillRect(x-2, y+s*0.62, v>=2 ? s+4 : s/2+2, s*0.4);
+        ctx.restore();
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        ctx.beginPath(); ctx.ellipse(x+s*0.27, y+s*0.3, s*0.09, s*0.05, -0.6, 0, Math.PI*2); ctx.fill();
+      }
+      heartPath(x,y,s); ctx.lineWidth = 1.6; ctx.strokeStyle = '#1b0f12'; ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ---- Mountain range (north edge of the northern map) ----
+  const MTN_PEAKS = [];
+  for(let k=0;k<16;k++) MTN_PEAKS.push({ x: k*2.6 - 0.5 + ((k*5)%3)*0.35, h: 1.55 + ((k*7)%4)*0.18 });
+  function mtnProfile(x){
+    let best = null;
+    for(const p of MTN_PEAKS){
+      const h = p.h - Math.abs(x - p.x)*0.95;
+      if(h > 0 && (!best || h > best.h)) best = { h, p, left: x < p.x };
+    }
+    return best;
+  }
+  function drawMountainSlice(sx, sy, wx){
+    const bottom = sy + TILE, STEP = 2;
+    for(let i=0;i<TILE;i+=STEP){
+      const r = mtnProfile(wx + (i + STEP/2)/TILE);
+      if(!r) continue;
+      const hp = r.h*TILE, top = bottom - hp;
+      ctx.fillStyle = r.left ? '#9b9793' : '#77736f';
+      ctx.fillRect(sx+i, top, STEP, hp);
+      const snowH = r.h - r.p.h*0.7;
+      if(snowH > 0){ ctx.fillStyle = r.left ? '#ffffff' : '#dfe4ea'; ctx.fillRect(sx+i, top, STEP, snowH*TILE); }
+    }
+  }
+
+  function findNear(ch){
+    const tx = tileX(), ty = tileY();
+    const fx = state.dir==='left'?-1:state.dir==='right'?1:0;
+    const fy = state.dir==='up'?-1:state.dir==='down'?1:0;
+    const cx = state.px+0.5, cy = state.py+0.5;
+    let best = null, bd = 1e9;
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      const x = tx+dx, y = ty+dy;
+      if(tileAt(x,y)!==ch) continue;
+      const ddx = x+0.5-cx, ddy = y+0.5-cy;
+      const d = Math.hypot(ddx,ddy) - (ddx*fx+ddy*fy)*0.15;
+      if(d<bd){ bd = d; best = [x,y,d]; }
+    }
+    return best;
+  }
+  function treeAction(t){
+    const k = K(t[0],t[1]);
+    if(state.fruit[k]){
+      const n = 1 + Math.floor(Math.random()*3);
+      state.mikan += n; state.fruit[k] = false;
+      addEffect(t[0],t[1],'pick');
+      setMsg(`みかんを${n}個収穫した🍊`);
+    } else {
+      const hits = (state.treeHits[k]||0) + 1;
+      const need = [3,2,1][state.axeLevel-1] || 1;
+      triggerActionAnim('axe');
+      addEffect(t[0],t[1],'chop');
+      if(hits>=need){
+        delete state.treeHits[k]; delete state.fruit[k];
+        state.chopped[k] = state.day;
+        const n = 2 + Math.floor(Math.random()*2) + (state.axeLevel-1);
+        state.wood += n;
+        addEffect(t[0],t[1],'wood');
+        setMsg(`木を切り倒した!木材を${n}個回収🪵`);
+      } else {
+        state.treeHits[k] = hits;
+        setMsg(`斧でコーン!(${hits}/${need})`);
+      }
+    }
+    updateHud(); save();
+  }
+
+  function rockAction(t){
+    const k = K(t[0],t[1]);
+    const need = [8,6,4][state.pickLevel-1] || 4;
+    const hits = (state.rockHits[k]||0) + 1;
+    triggerActionAnim('pick');
+    addEffect(t[0],t[1],'rockchip');
+    if(hits>=need){
+      delete state.rockHits[k];
+      state.mined[k] = state.day;
+      const ironP = ([0.25,0.35,0.5][state.pickLevel-1] || 0.5) + (state.map==='north' ? 0.2 : state.map==='cave' ? 0.35 : 0);
+      if(Math.random()<ironP){
+        const n = 1 + (state.pickLevel>=3 ? 1 : 0);
+        state.iron += n;
+        addEffect(t[0],t[1],'drop','#7d8fa8');
+        setMsg(`鉄を${n}個回収🔩`);
+      } else {
+        const n = 2 + Math.floor(Math.random()*2) + (state.pickLevel-1);
+        state.stone += n;
+        addEffect(t[0],t[1],'drop','#a4a8b0');
+        setMsg(`石を${n}個回収🪨`);
+      }
+    } else {
+      state.rockHits[k] = hits;
+      setMsg(`ピッケルでカーン!(${hits}/${need})`);
+    }
+    updateHud(); save();
+  }
+
+  // Gold ore: very hard (20 hits with the starting pickaxe)
+  function goldAction(t){
+    const k = K(t[0],t[1]);
+    const need = [20,15,10][state.pickLevel-1] || 10;
+    const hits = (state.rockHits[k]||0) + 1;
+    triggerActionAnim('pick');
+    addEffect(t[0],t[1],'rockchip');
+    if(hits>=need){
+      delete state.rockHits[k];
+      state.mined[k] = state.day;
+      const n = 1 + Math.floor(Math.random()*2);
+      state.goldOre = (state.goldOre||0) + n;
+      addEffect(t[0],t[1],'drop','#f2c230');
+      setMsg(`金鉱石を${n}個回収🥇`);
+    } else {
+      state.rockHits[k] = hits;
+      setMsg(`ピッケルでガキン!(${hits}/${need})`);
+    }
+    updateHud(); save();
+  }
+
+  // Wild mushrooms: pick by hand, they grow back
+  function mushroomAction(t){
+    const k = K(t[0],t[1]);
+    const n = 1 + Math.floor(Math.random()*2);
+    state.mushroom = (state.mushroom||0) + n;
+    state.mined[k] = state.day;
+    addEffect(t[0],t[1],'pick');
+    setMsg(`きのこを${n}個採った🍄`);
+    updateHud(); save();
+  }
+  // Treasure chests: open once, refill after 14 days
+  function chestAction(t){
+    const k = K(t[0],t[1]);
+    state.opened = state.opened || {};
+    state.opened[k] = state.day;
+    addEffect(t[0],t[1],'pick');
+    const r = Math.random();
+    if(r<0.45){ const n = 150 + Math.floor(Math.random()*301); state.gold += n; setMsg(`宝箱を開けた!${n}G見つけた💰`); }
+    else if(r<0.7){ const n = 3 + Math.floor(Math.random()*4); state.iron += n; setMsg(`宝箱を開けた!鉄を${n}個見つけた🔩`); }
+    else if(r<0.85){ const w = 8 + Math.floor(Math.random()*8), st = 8 + Math.floor(Math.random()*8); state.wood += w; state.stone += st; setMsg(`宝箱を開けた!木材${w}・石${st}を見つけた`); }
+    else { const n = 1 + Math.floor(Math.random()*2); state.goldOre = (state.goldOre||0) + n; setMsg(`宝箱を開けた!金鉱石を${n}個見つけた🥇`); }
+    updateHud(); save();
+  }
+
+  const OFFSETS_1 = [[0,0]];
+  const OFFSETS_PLUS = [[0,0],[1,0],[-1,0],[0,1],[0,-1]];
+  const OFFSETS_3x3 = [[0,0],[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
+  const ACTION_MSG = { till:'土を耕したよ🪓', plant:'種を植えたよ🌱', water:'水をあげたよ💧', harvest:'収穫した!🧺' };
+
+  function actOnTile(wx,wy){
+    if(tileAt(wx,wy) !== '1') return null;
+    const t = farmTile(wx,wy);
+    if(!t.tilled){
+      t.tilled = true;
+      addEffect(wx,wy,'till');
+      return 'till';
+    } else if(!t.planted){
+      const crop = state.selectedCrop;
+      if(state.seedsByType[crop]<=0) return null;
+      t.planted = true; t.growth = 0; t.watered = false; t.crop = crop;
+      state.seedsByType[crop]--;
+      addEffect(wx,wy,'plant');
+      return 'plant';
+    } else if(t.growth>=3){
+      const crop = t.crop || 'wheat';
+      state.harvestedByType[crop] = (state.harvestedByType[crop]||0) + 1;
+      state.totalHarvest = (state.totalHarvest||0) + 1;
+      t.planted = false; t.tilled = false; t.growth = 0; t.watered = false; t.crop = null;
+      addEffect(wx,wy,'harvest');
+      return 'harvest';
+    } else if(!t.watered){
+      t.watered = true;
+      addEffect(wx,wy,'water');
+      return 'water';
+    }
+    return null;
+  }
+
+  function farmAction(){
+    if((state.seedsByType[state.selectedCrop]||0)<=0){
+      const other = Object.keys(CROPS).find(k=>(state.seedsByType[k]||0)>0);
+      if(other){ state.selectedCrop = other; setMsg(`${CROPS[other].label}の種に切りかえた${CROPS[other].emoji}`); updateHud(); }
+    }
+    const offsets = state.toolLevel>=3 ? OFFSETS_3x3 : state.toolLevel>=2 ? OFFSETS_PLUS : OFFSETS_1;
+    const results = [];
+    for(const [dx,dy] of offsets){
+      const r = actOnTile(tileX()+dx, tileY()+dy);
+      if(r) results.push(r);
+    }
+    if(results.length===0){
+      setMsg('今日はここではもうやることないよ');
+    } else {
+      triggerActionAnim();
+      setMsg(results.length===1 ? ACTION_MSG[results[0]] : `まとめて${results.length}マス作業したよ⚡`);
+    }
+    updateHud(); draw(); save();
+  }
+
+  const npcLines = [
+    '今日もいい天気だね〜',
+    '畑仕事は順調?',
+    'お店で種を買えるよ🏪',
+    'たまには休むのも大事だよ',
+    '家でアクションすると、1日を過ごせるよ🛏️',
+    '左下の門の先に川の国があるよ(通行料2000G)',
+    'この村、のんびりしてていいでしょ',
+    'ニワトリにもエサあげてる?',
+    '雨の日は水やりしなくても育つらしいよ',
+    '牛の牧場の南に羊の牧場があるよ。羊のエサはトマトなんだ🍅'
+  ];
+  const riverLines = [
+    '釣りは西と東、ふたつの桟橋でできるよ🎣',
+    '東の湖の魚はレアなのが多いんだ。竿を強化するともっと釣れるよ',
+    '西の釣具屋は魚を高く買ってくれるよ。きのこも買い取りだ🍄',
+    '森にはきのこが生えてるよ。採っても、しばらくするとまた生える',
+    '東の湖の桟橋の先の小島に、宝箱があるらしいよ',
+    '宝箱は森の奥にも隠れてる。開けても、二週間たつとまた中身が入るんだって',
+    '糸をたらして、「❗」が出たらすぐアクションだよ',
+    'いくつも橋を渡った先にいい釣り場があるよ',
+    '大ナマズは滅多に釣れない。釣れたら大金だ',
+    '釣った魚はお店で売れるよ'
+  ];
+  const northLines = [
+    'ここの岩は硬いけど、鉄が出やすいんだ',
+    '奥の採石場は宝の山さ',
+    '作業台はここにもあるよ。素材が貯まったら強化してくといい',
+    '西の森は木が密集してて、みかんも実りやすいんだ',
+    '池のまわりは静かでね、昼寝にちょうどいい',
+    '南の抜け道から村に戻れるよ',
+    '南の建設予定地に家が建つらしいよ。材料と条件をそろえてね🏠',
+    '一番上の門の先に洞窟があるらしいよ(通行料5000G)🕳️',
+    '洞窟の一番奥に、地下へ続く階段があるって噂だよ(10000G)🪜',
+    '建設予定地の東に素材屋があるよ。木材・石・鉄をまとめて売れるんだ🏪'
+  ];
+  function talkNPC(){
+    const m = state.map;
+    const lines = m==='north' ? northLines : m==='river' ? riverLines : npcLines;
+    setMsg((m==='north' ? '🧔 ' : m==='river' ? '🧓 ' : '👩 ') + lines[Math.floor(Math.random()*lines.length)]);
+  }
+
+  function chickenAction(){
+    if(state.chicken.eggReady){
+      state.eggs++;
+      state.chicken.eggReady = false;
+      setMsg('卵を集めたよ🥚');
+      updateHud(); save(); return;
+    }
+    if(state.chicken.fed){
+      setMsg('もうエサはあげたよ'); return;
+    }
+    state.chicken.fed = true;
+    setMsg('ニワトリにエサをあげたよ🐔');
+    updateHud(); save();
+  }
+
+  const DAY_SEC = 120;   // one in-game day = 2 real minutes
+  function sleep(auto){
+    const isRain = Math.random() < 0.3;
+    Object.values(state.tiles).forEach(t=>{
+      if(t.planted && (t.watered || isRain) && t.growth<3){ t.growth++; }
+      t.watered = false;
+    });
+    if(state.chicken.fed){ state.chicken.eggReady = true; }
+    state.chicken.fed = false;
+    for(const c of state.cows){ if(c.fed) c.milkReady = true; c.fed = false; }
+    for(const c of state.sheep){ if(c.fed) c.woolReady = true; c.fed = false; }
+    state.day++;
+    for(const k of Object.keys(state.chopped)){
+      const pk = parseKey(k), x = pk.x, y = pk.y;
+      const near = pk.map===state.map && Math.abs(state.px-x)<1 && Math.abs(state.py-y)<1;
+      if(state.day - state.chopped[k] >= 5 && !near) delete state.chopped[k];
+    }
+    for(const k of Object.keys(state.mined)){
+      const pk = parseKey(k), x = pk.x, y = pk.y;
+      const near = pk.map===state.map && Math.abs(state.px-x)<1 && Math.abs(state.py-y)<1;
+      const isGold = MAP_LAYOUTS[pk.map] && MAP_LAYOUTS[pk.map][y] && MAP_LAYOUTS[pk.map][y][x]==='A';
+      if(state.day - state.mined[k] >= (isGold ? 7 : 4) && !near) delete state.mined[k];
+    }
+    for(const k of Object.keys(state.opened||{})){ if(state.day - state.opened[k] >= 14) delete state.opened[k]; }
+    for(const k of treeKeys.concat(treeKeysN, treeKeysR)){
+      if(state.chopped[k]===undefined && !state.fruit[k] && Math.random()<0.2) state.fruit[k] = true;
+    }
+    state.dayTime = 0;
+    if(auto) setMsg(isRain ? '🌧️ 雨が降った。畑は自動で水やりされたよ' : '☀️ 新しい一日が始まった');
+    else setMsg(isRain ? '雨の音…🌧️ 畑は自動で水やりされたよ' : 'おやすみ…🌙 また新しい一日だよ');
+    updateHud(); draw(); save();
+  }
+
+  const UPG = {
+    hoe:  { name:'鍬', icon:'🌱', key:'toolLevel', costs:[{wood:5,stone:10,iron:2},{wood:10,stone:20,iron:6}], desc:['一度に5マス作業','一度に9マス作業'] },
+    axe:  { name:'斧', icon:'🪓', key:'axeLevel',  costs:[{stone:8,iron:2},{stone:16,iron:6}], desc:['2回で伐採・木材+1','1回で伐採・木材+2'] },
+    pick: { name:'ピッケル', icon:'⛏️', key:'pickLevel', costs:[{wood:8,stone:6,iron:1},{wood:15,stone:14,iron:5}], desc:['6回で採掘・鉄が出やすい','4回で採掘・鉄がさらに出やすい'] },
+  };
+  function costStr(c){ return [c.wood&&`🪵${c.wood}`, c.stone&&`🪨${c.stone}`, c.iron&&`🔩${c.iron}`].filter(Boolean).join(' '); }
+  function renderCraft(msg){
+    const list = document.getElementById('craftList');
+    list.innerHTML = '';
+    for(const id of Object.keys(UPG)){
+      const u = UPG[id], lv = state[u.key];
+      const row = document.createElement('div'); row.className = 'shop-item';
+      const span = document.createElement('span');
+      if(lv>=3){ span.textContent = `${u.icon} ${u.name} Lv3 (最大)`; row.appendChild(span); }
+      else{
+        span.innerHTML = `${u.icon} ${u.name} Lv${lv}→${lv+1}<br><small>${u.desc[lv-1]}<br>${costStr(u.costs[lv-1])}</small>`;
+        const b = document.createElement('button'); b.textContent = '強化';
+        b.onclick = ()=>upgradeTool(id);
+        row.appendChild(span); row.appendChild(b);
+      }
+      list.appendChild(row);
+    }
+    const swRow = document.createElement('div'); swRow.className = 'shop-item';
+    const swSpan = document.createElement('span');
+    if(state.sword){
+      const lv = state.swordLevel||1;
+      if(lv>=5){ swSpan.textContent = '⚔️ 剣 Lv5 (最大)'; swRow.appendChild(swSpan); }
+      else{
+        swSpan.innerHTML = `⚔️ 剣 Lv${lv}→${lv+1}<br><small>攻撃力 ${SWORD_DMG[lv-1]}→${SWORD_DMG[lv]} / 振りも速くなる<br>${swordCostStr(SWORD_UP[lv])}</small>`;
+        const b = document.createElement('button'); b.textContent = '強化'; b.onclick = upgradeSword;
+        swRow.appendChild(swSpan); swRow.appendChild(b);
+      }
+    }
+    else{
+      swSpan.innerHTML = `⚔️ 剣を作る<br><small>ダンジョンで敵を倒せる<br>${costStr(SWORD_COST)}</small>`;
+      const b = document.createElement('button'); b.textContent = '作る'; b.onclick = craftSword;
+      swRow.appendChild(swSpan); swRow.appendChild(b);
+    }
+    list.appendChild(swRow);
+    document.getElementById('craftInfo').textContent = msg || `所持: 🪵${state.wood} 🪨${state.stone} 🔩${state.iron}`;
+  }
+  function upgradeTool(id){
+    const u = UPG[id], lv = state[u.key];
+    if(lv>=3) return;
+    const c = u.costs[lv-1];
+    if((c.wood||0)>state.wood || (c.stone||0)>state.stone || (c.iron||0)>state.iron){ renderCraft('素材が足りないよ'); return; }
+    state.wood -= c.wood||0; state.stone -= c.stone||0; state.iron -= c.iron||0;
+    state[u.key]++;
+    updateHud(); save();
+    renderCraft(`${u.name}がLv${state[u.key]}になった!`);
+  }
+  const SWORD_COST = { wood:5, stone:10, iron:5 };
+  function craftSword(){
+    if(state.sword) return;
+    const c = SWORD_COST;
+    if(c.wood>state.wood || c.stone>state.stone || c.iron>state.iron){ renderCraft('素材が足りないよ'); return; }
+    state.wood -= c.wood; state.stone -= c.stone; state.iron -= c.iron;
+    state.sword = true; state.swordLevel = 1;
+    updateHud(); save();
+    renderCraft('剣を作った!ダンジョンでアクションを押すと振れるよ⚔️');
+  }
+  const SWORD_UP = [null,
+    { wood:10, stone:15, iron:8 },                      // Lv1 -> 2
+    { stone:25, iron:15, goldOre:2 },                   // Lv2 -> 3
+    { iron:25, goldOre:6, gold:1500 },                  // Lv3 -> 4
+    { iron:40, goldOre:12, gold:5000 },                 // Lv4 -> 5
+  ];
+  function swordCostStr(c){
+    return [c.wood&&`🪵${c.wood}`, c.stone&&`🪨${c.stone}`, c.iron&&`🔩${c.iron}`, c.goldOre&&`🥇${c.goldOre}`, c.gold&&`💰${c.gold}G`].filter(Boolean).join(' ');
+  }
+  function upgradeSword(){
+    const lv = state.swordLevel||1;
+    if(!state.sword || lv>=5) return;
+    const c = SWORD_UP[lv];
+    if((c.wood||0)>state.wood || (c.stone||0)>state.stone || (c.iron||0)>state.iron || (c.goldOre||0)>(state.goldOre||0) || (c.gold||0)>state.gold){ renderCraft('素材が足りないよ'); return; }
+    state.wood -= c.wood||0; state.stone -= c.stone||0; state.iron -= c.iron||0; state.goldOre = (state.goldOre||0) - (c.goldOre||0); state.gold -= c.gold||0;
+    state.swordLevel = lv+1;
+    updateHud(); save();
+    renderCraft(`剣がLv${lv+1}になった!攻撃力${SWORD_DMG[lv]}`);
+  }
+  function openCraft(){ document.getElementById('craftModal').classList.add('open'); renderCraft(); }
+  document.getElementById('closeCraft').onclick = ()=>document.getElementById('craftModal').classList.remove('open');
+  document.querySelectorAll('.sellMat').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const m = btn.dataset.mat, price = {wood:5, stone:8, iron:30, goldOre:150}[m];
+      if(state[m]<=0){ setMsg('その素材がないよ'); return; }
+      state[m]--; state.gold += price;
+      updateHud();
+      document.getElementById('shopInfo').textContent = `+${price}G / ${inventorySummary()}`;
+      save();
+    });
+  });
+
+  // ---- North material shop (sells wood / stone / iron only) ----
+  const MAT_PRICE = { wood:5, stone:8, iron:30, goldOre:150 };
+  const MAT_ICON = { wood:'🪵', stone:'🪨', iron:'🔩', goldOre:'🥇' };
+  function renderNorthShop(msg){
+    let total = 0;
+    for(const m of Object.keys(MAT_PRICE)){
+      document.getElementById('ns_'+m).textContent = `×${state[m]||0}(1個${MAT_PRICE[m]}G)`;
+      total += (state[m]||0)*MAT_PRICE[m];
+    }
+    document.getElementById('northShopInfo').textContent = msg || `全部売ると +${total}G / 所持金 ${state.gold}G`;
+  }
+  function openNorthShop(){ document.getElementById('northShopModal').classList.add('open'); renderNorthShop(); }
+  function sellMats(list){
+    let total = 0; const sold = [];
+    for(const m of list){
+      const n = state[m]||0;
+      if(n>0){ total += n*MAT_PRICE[m]; sold.push(MAT_ICON[m]+n); state[m] = 0; }
+    }
+    if(total===0){ renderNorthShop('売れる素材がないよ'); return; }
+    state.gold += total;
+    updateHud(); save();
+    renderNorthShop(`${sold.join(' ')} 売れて+${total}G!`);
+  }
+  document.querySelectorAll('.nsSell').forEach(btn=>{
+    btn.addEventListener('click', ()=>sellMats([btn.dataset.mat]));
+  });
+  document.getElementById('nsSellAll').onclick = ()=>sellMats(Object.keys(MAT_PRICE));
+  document.getElementById('closeNorthShop').onclick = ()=>document.getElementById('northShopModal').classList.remove('open');
+
+  document.querySelectorAll('.seed').forEach(el=>{
+    el.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      const k = el.dataset.crop;
+      state.selectedCrop = k; updateHud(); save();
+      setMsg(`${CROPS[k].label}の種を選んだ${CROPS[k].emoji}(植えるのはこの種)`);
+    });
+  });
+
+  function inventorySummary(){
+    const cropsStr = Object.keys(CROPS).map(k=>`${CROPS[k].emoji}${state.harvestedByType[k]||0}`).join(' ');
+    const seedsStr = Object.keys(CROPS).map(k=>`${CROPS[k].emoji}${state.seedsByType[k]||0}`).join(' ');
+    return `種: ${seedsStr} / 収穫物: ${cropsStr} / 🪵${state.wood} 🪨${state.stone} 🔩${state.iron} 🥇${state.goldOre||0} 🍊${state.mikan} 🥛${state.milk} 🧶${state.wool||0} 🍄${state.mushroom||0} 🐟${fishCount()} / 卵: ${state.eggs}個`;
+  }
+
+  function openShop(){
+    document.getElementById('shopModal').classList.add('open');
+    document.getElementById('shopInfo').textContent = inventorySummary();
+    document.getElementById('toolLv').textContent = state.toolLevel;
+  }
+  function closeShop(){ document.getElementById('shopModal').classList.remove('open'); }
+
+  document.querySelectorAll('.buySeed').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const crop = btn.dataset.crop;
+      const cost = CROPS[crop].seedCost;
+      if(state.gold<cost){ setMsg('お金が足りないよ'); return; }
+      state.gold -= cost;
+      state.seedsByType[crop] = (state.seedsByType[crop]||0) + 1;
+      state.selectedCrop = crop;
+      updateHud();
+      document.getElementById('shopInfo').textContent = `${CROPS[crop].label}の種を買って選択したよ${CROPS[crop].emoji} / ${inventorySummary()}`;
+      save();
+    });
+  });
+  document.getElementById('sellCrop').onclick = ()=>{
+    let total = 0, sold = [];
+    for(const k of Object.keys(CROPS)){
+      const n = state.harvestedByType[k]||0;
+      if(n>0){ total += n*CROPS[k].sellPrice; sold.push(`${CROPS[k].emoji}${n}`); state.harvestedByType[k] = 0; }
+    }
+    if(state.mikan>0){ total += state.mikan*12; sold.push(`🍊${state.mikan}`); state.mikan = 0; }
+    if(state.milk>0){ total += state.milk*30; sold.push(`🥛${state.milk}`); state.milk = 0; }
+    if((state.wool||0)>0){ total += state.wool*45; sold.push(`🧶${state.wool}`); state.wool = 0; }
+    if((state.mushroom||0)>0){ total += state.mushroom*MUSH_PRICE; sold.push(`🍄${state.mushroom}`); state.mushroom = 0; }
+    for(const k of Object.keys(FISH)){
+      const n = state.fish[k]||0;
+      if(n>0){ total += n*FISH[k].price; sold.push(`${FISH[k].emoji}${n}`); state.fish[k] = 0; }
+    }
+    if(total===0){ setMsg('売れるものがないよ'); return; }
+    state.gold += total;
+    updateHud();
+    document.getElementById('shopInfo').textContent = `${sold.join(' ')} 売れて+${total}G!`;
+    save();
+  };
+  document.getElementById('sellEgg').onclick = ()=>{
+    if(state.eggs<=0){ setMsg('売れる卵がないよ'); return; }
+    state.eggs--; state.gold += 15;
+    updateHud();
+    document.getElementById('shopInfo').textContent = `卵が売れたよ🥚 / ${inventorySummary()}`;
+    save();
+  };
+  document.getElementById('upgradeTool').onclick = ()=>{
+    if(state.toolLevel>=3){ setMsg('鍬はもう最大まで強化してるよ'); return; }
+    const cost = state.toolLevel*250;
+    if(state.gold<cost){ setMsg(`お金が足りないよ(${cost}G必要)`); return; }
+    state.gold -= cost; state.toolLevel++;
+    updateHud();
+    document.getElementById('toolLv').textContent = state.toolLevel;
+    document.getElementById('shopInfo').textContent = `鍬がLv${state.toolLevel}になったよ!一度に${state.toolLevel===2?'5':'9'}マス作業できるよ`;
+    save();
+  };
+  document.getElementById('closeShop').onclick = closeShop;
+  document.getElementById('btnAction').addEventListener('pointerdown', (e)=>{ e.preventDefault(); action(); });
+
+  // Floating drag control: touch anywhere on the canvas, drag to move, quick tap = action
+  const inputVec = { x:0, y:0 };
+  const stickVec = { x:0, y:0 };
+  const keyVec = { up:false, down:false, left:false, right:false };
+  const drag = { active:false, id:null, sx:0, sy:0, kx:0, ky:0, moved:false };
+  (function setupDrag(){
+    const RADIUS = 55, DEADZONE = 10;
+    let downTime = 0, maxDist = 0, sx = 0, sy = 0;
+    function scaleK(){ const r = canvas.getBoundingClientRect(); return { r, k: displayW / r.width }; }
+
+    function onDown(e){
+      if(drag.active) return;
+      e.preventDefault();
+      const {r, k} = scaleK();
+      drag.active = true; drag.id = e.pointerId; drag.moved = false;
+      sx = e.clientX; sy = e.clientY;
+      drag.sx = (sx - r.left) * k; drag.sy = (sy - r.top) * k;
+      drag.kx = 0; drag.ky = 0;
+      downTime = performance.now(); maxDist = 0;
+      canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+    }
+    function onMove(e){
+      if(!drag.active || e.pointerId !== drag.id) return;
+      const {k} = scaleK();
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      const dist = Math.hypot(dx, dy);
+      if(dist > maxDist) maxDist = dist;
+      const clamped = Math.min(dist, RADIUS), ang = Math.atan2(dy, dx);
+      const px = Math.cos(ang) * clamped, py = Math.sin(ang) * clamped;
+      drag.kx = px * k; drag.ky = py * k;
+      drag.moved = maxDist >= 14;
+      if(dist < DEADZONE){ stickVec.x = 0; stickVec.y = 0; }
+      else { stickVec.x = px / RADIUS; stickVec.y = py / RADIUS; }
+    }
+    function onUp(e){
+      if(!drag.active || e.pointerId !== drag.id) return;
+      drag.active = false; drag.moved = false;
+      stickVec.x = 0; stickVec.y = 0;
+      // Quick tap without dragging = action
+      if(performance.now() - downTime < 300 && maxDist < 14){ action(); }
+    }
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('pointercancel', onUp);
+  })();
+
+  function drawDragGuide(){
+    if(!drag.active || !drag.moved) return;
+    ctx.save();
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(drag.sx, drag.sy, 34, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(drag.sx + drag.kx*0.6, drag.sy + drag.ky*0.6, 15, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  window.addEventListener('keydown', (e)=>{
+    switch(e.key){
+      case 'ArrowUp': case 'w': case 'W': keyVec.up=true; break;
+      case 'ArrowDown': case 's': case 'S': keyVec.down=true; break;
+      case 'ArrowLeft': case 'a': case 'A': keyVec.left=true; break;
+      case 'ArrowRight': case 'd': case 'D': keyVec.right=true; break;
+      case ' ': case 'Enter': case 'e': case 'E': action(); break;
+    }
+  });
+  window.addEventListener('keyup', (e)=>{
+    switch(e.key){
+      case 'ArrowUp': case 'w': case 'W': keyVec.up=false; break;
+      case 'ArrowDown': case 's': case 'S': keyVec.down=false; break;
+      case 'ArrowLeft': case 'a': case 'A': keyVec.left=false; break;
+      case 'ArrowRight': case 'd': case 'D': keyVec.right=false; break;
+    }
+  });
+
+  function camera(){
+    const camX = Math.max(0, Math.min(COLS-VIEW_COLS, state.px + 0.5 - VIEW_COLS/2));
+    const camY = Math.max(0, Math.min(ROWS-VIEW_ROWS, state.py + 0.5 - VIEW_ROWS/2));
+    return {camX, camY};
+  }
+
+  function speckle(px,py,wx,wy,count,color,sizeMin,sizeMax){
+    ctx.fillStyle = color;
+    for(let i=0;i<count;i++){
+      const seed = (wx*928371 + wy*128371 + i*3701 + 17) >>> 0;
+      const rx = (seed % 97)/97;
+      const ry = ((seed>>3) % 89)/89;
+      const s = sizeMin + (((seed>>7) % 100)/100)*(sizeMax-sizeMin);
+      ctx.fillRect(px + rx*TILE, py + ry*TILE, s, s);
+    }
+  }
+  function drawTile(wx, wy, sx, sy){
+    const t = tileAt(wx,wy);
+    const px = sx*TILE, py = sy*TILE;
+    if(t==='0'){
+      ctx.fillStyle = GROUND;
+      ctx.fillRect(px,py,TILE,TILE);
+      if(state.map==='river'){                       // little wild flowers
+        const h = ((wx*73856093) ^ (wy*19349663)) >>> 0;
+        if(h%7===0){
+          const cols = ['#ffffff','#ffd84a','#ff9ec4'], fx = px + 4 + (h>>4)%(TILE-9), fy = py + 4 + (h>>9)%(TILE-9);
+          ctx.fillStyle = cols[(h>>3)%3]; ctx.fillRect(fx, fy, 3, 3); ctx.fillRect(fx-1, fy+1, 5, 1);
+          ctx.fillStyle = '#e0a020'; ctx.fillRect(fx+1, fy+1, 1, 1);
+        }
+      }
+    } else if(t==='B'||t==='C'){
+      ctx.fillStyle = '#6ea8d8'; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16;
+      ctx.fillStyle = '#b98a4e';
+      ctx.strokeStyle = 'rgba(90,58,32,0.55)';
+      if(t==='B'){
+        ctx.fillRect(px,py+2*u,TILE,12*u);
+        for(let i=0;i<4;i++){ ctx.beginPath(); ctx.moveTo(px+i*4*u+2*u,py+2*u); ctx.lineTo(px+i*4*u+2*u,py+14*u); ctx.stroke(); }
+        ctx.fillStyle = '#7a5230'; ctx.fillRect(px,py+1*u,TILE,2*u); ctx.fillRect(px,py+13*u,TILE,2*u);
+      } else {
+        ctx.fillRect(px+2*u,py,12*u,TILE);
+        for(let i=0;i<4;i++){ ctx.beginPath(); ctx.moveTo(px+2*u,py+i*4*u+2*u); ctx.lineTo(px+14*u,py+i*4*u+2*u); ctx.stroke(); }
+        ctx.fillStyle = '#7a5230'; ctx.fillRect(px+1*u,py,2*u,TILE); ctx.fillRect(px+13*u,py,2*u,TILE);
+      }
+    } else if(t==='F'){
+      ctx.fillStyle = '#6ea8d8'; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16;
+      ctx.fillStyle = '#c39a5c'; ctx.fillRect(px+3*u,py,10*u,TILE);
+      ctx.strokeStyle = 'rgba(90,58,32,0.55)';
+      for(let i=0;i<4;i++){ ctx.beginPath(); ctx.moveTo(px+3*u,py+i*4*u+2*u); ctx.lineTo(px+13*u,py+i*4*u+2*u); ctx.stroke(); }
+      ctx.fillStyle = '#6b4a2a'; ctx.fillRect(px+2*u,py,2*u,TILE); ctx.fillRect(px+12*u,py,2*u,TILE);
+    } else if(t==='l'||t==='m'||t==='n'){
+      drawSprite(px, py, t==='m' ? ROOF_MID_TEX : ROOF_TEX, HOUSE2_PALETTE, TILE/16, false);
+    } else if(t==='o'||t==='p'||t==='q'){
+      drawSprite(px, py, t==='p' ? WALL_DOOR : WALL_WINDOW, HOUSE2_PALETTE, TILE/16, false);
+    } else if(t==='r'||t==='R'||t==='x'||t==='s'||t==='S'||t==='y'){
+      ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16, top = (t==='r'||t==='R'||t==='x');
+      const le = (t==='r'||t==='s'), re = (t==='x'||t==='y');
+      if(!top){
+        ctx.fillStyle = '#b9b3a5'; ctx.fillRect(px, py+9*u, TILE, 7*u);
+        ctx.fillStyle = '#9c9689'; ctx.fillRect(px, py+9*u, TILE, 2*u);
+      }
+      ctx.fillStyle = '#8a5a34';
+      if(le) ctx.fillRect(px+1*u, py, 2.5*u, TILE);
+      if(re) ctx.fillRect(px+TILE-3.5*u, py, 2.5*u, TILE);
+      if(top){ ctx.fillRect(px, py+1*u, TILE, 2*u); ctx.fillRect(px, py+TILE-2*u, TILE, 2*u); }
+      if(t==='R'){ ctx.font = Math.round(TILE*0.6)+'px sans-serif'; ctx.fillText('🚧', px+TILE*0.18, py+TILE*0.72); }
+    } else if(t==='j'){
+      ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16;
+      ctx.fillStyle = '#c97b5f';
+      ctx.fillRect(px+1*u, py+3*u, 3*u, 11*u); ctx.fillRect(px+12*u, py+3*u, 3*u, 11*u);
+      ctx.fillStyle = '#8a4a32';
+      ctx.fillRect(px+4*u, py+5*u, 2*u, 8*u);
+      ctx.fillRect(px+4*u, py+6*u, 4*u, 2*u); ctx.fillRect(px+4*u, py+10*u, 4*u, 2*u);
+    } else if(t==='G'||t==='Z'||t==='T'){
+      ctx.fillStyle = '#e8dcae'; ctx.fillRect(px,py,TILE,TILE);
+    } else if(t==='3'||t==='u'||t==='v'||t==='U'||t==='V'||t==='X'||t==='Q'){
+      ctx.fillStyle = '#e8dcae';
+      ctx.fillRect(px,py,TILE,TILE);
+      ctx.fillStyle = 'rgba(0,0,0,0.07)';
+      ctx.fillRect(px+3,py+3,TILE-6,TILE-6);
+      speckle(px,py,wx,wy,4,'rgba(0,0,0,0.08)',1,2);
+    } else if(t==='8'){
+      ctx.fillStyle = GROUND;
+      ctx.fillRect(px,py,TILE,TILE);
+      ctx.fillStyle = '#8a4a32';
+      ctx.fillRect(px+3,py+TILE/2-7,TILE-6,6);
+      ctx.fillStyle = '#c97b5f';
+      ctx.fillRect(px+TILE/2-3,py+4,6,TILE-8);
+    } else if(t==='g'||t==='A'){
+      ctx.fillStyle = GROUND;
+      ctx.fillRect(px,py,TILE,TILE);
+      let shake = 0;
+      for(const e of effects){
+        if(e.type==='rockchip' && e.wx===wx && e.wy===wy){
+          const a = (performance.now()-e.start)/600;
+          if(a<0.5) shake = -Math.abs(Math.sin(a*60))*(1-a*2)*2.5;
+        }
+      }
+      if(t==='A'){
+        drawSprite(px+shake, py, GOLD_SPRITE, GOLD_PALETTE, TILE/16, false);
+        const tw = (Math.sin(performance.now()/300 + wx*1.7 + wy)+1)/2;
+        ctx.fillStyle = `rgba(255,248,190,${0.25+0.55*tw})`; ctx.fillRect(px+TILE*0.62, py+TILE*0.3, 3, 3);
+      } else drawSprite(px+shake, py, ROCK_SPRITE, ROCK_PALETTE, TILE/16, false);
+    } else if(t==='h'||t==='i'){
+      ctx.fillStyle = GROUND;
+      ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16, L = t==='h', x0 = L ? px+1*u : px, w = L ? 15*u : 15*u;
+      ctx.fillStyle = '#c58a52'; ctx.fillRect(x0, py+6*u, w, 3*u);
+      ctx.fillStyle = '#8a5a34'; ctx.fillRect(x0, py+9*u, w, 2*u);
+      ctx.fillStyle = '#6b4a2a';
+      ctx.fillRect(L ? px+2*u : px+12*u, py+11*u, 2*u, 4*u);
+      if(L){
+        ctx.fillRect(px+7*u, py+11*u, 2*u, 4*u);
+        ctx.fillStyle = '#6b4a2a'; ctx.fillRect(px+6*u, py+3*u, 2*u, 4*u);
+        ctx.fillStyle = '#9a9a9a'; ctx.fillRect(px+4*u, py+2*u, 6*u, 2.5*u);
+      } else {
+        ctx.fillStyle = '#5a5f68'; ctx.fillRect(px+4*u, py+4*u, 7*u, 2*u);
+        ctx.fillRect(px+6*u, py+3*u, 3*u, 1*u);
+        ctx.fillStyle = '#b8bcc4'; ctx.fillRect(px+3*u, py+4*u, 2*u, 1*u);
+      }
+    } else if(t==='P'){
+      ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16;
+      ctx.fillStyle = '#f1e6d0'; ctx.fillRect(px+7*u, py+9*u, 2*u, 4*u);
+      ctx.fillStyle = '#d9433a'; ctx.beginPath(); ctx.ellipse(px+8*u, py+9.5*u, 4.5*u, 3.5*u, 0, Math.PI, Math.PI*2); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(px+5.5*u, py+8*u, 1.5*u, 1.5*u); ctx.fillRect(px+9*u, py+7.3*u, 1.5*u, 1.5*u);
+    } else if(t==='Y'||t==='W'){
+      ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16;
+      ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(px+2*u, py+13.5*u, 12*u, 2*u);
+      ctx.fillStyle = '#8a5a34'; ctx.fillRect(px+2*u, py+7*u, 12*u, 7*u);
+      if(t==='Y'){
+        ctx.fillStyle = '#a56b3a'; ctx.fillRect(px+2*u, py+4.5*u, 12*u, 3.5*u);
+        ctx.fillStyle = '#e0b030'; ctx.fillRect(px+7*u, py+4.5*u, 2*u, 9.5*u);
+        ctx.fillStyle = '#fff2a0'; ctx.fillRect(px+7*u, py+8*u, 2*u, 2*u);
+      } else {
+        ctx.fillStyle = '#2a1810'; ctx.fillRect(px+3*u, py+7*u, 10*u, 2*u);
+        ctx.fillStyle = '#a56b3a'; ctx.fillRect(px+2*u, py+2*u, 12*u, 3*u);
+        ctx.fillStyle = '#e0b030'; ctx.fillRect(px+7*u, py+2*u, 2*u, 3*u);
+      }
+    } else if(t==='k'){
+      ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16;
+      ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(px+8*u, py+14.2*u, 7.5*u, 2*u, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#8f8b84'; ctx.fillRect(px+1.5*u, py+7*u, 13*u, 7*u);                       // front wall
+      ctx.fillStyle = '#716d66'; ctx.fillRect(px+1.5*u, py+10*u, 13*u, 0.8*u); ctx.fillRect(px+1.5*u, py+12.6*u, 13*u, 0.8*u);
+      ctx.fillRect(px+5*u, py+7.8*u, 0.8*u, 2.2*u); ctx.fillRect(px+10*u, py+10.8*u, 0.8*u, 1.8*u);
+      ctx.fillStyle = '#b9b4aa'; ctx.beginPath(); ctx.ellipse(px+8*u, py+7*u, 6.8*u, 3.4*u, 0, 0, Math.PI*2); ctx.fill();   // rim
+      ctx.fillStyle = '#2f6fa8'; ctx.beginPath(); ctx.ellipse(px+8*u, py+7*u, 5*u, 2.4*u, 0, 0, Math.PI*2); ctx.fill();       // water
+      ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillRect(px+6*u, py+6.2*u, 2.5*u, 0.8*u);
+      ctx.fillStyle = '#8a5a34'; ctx.fillRect(px+11.5*u, py+3.5*u, 2.2*u, 2.6*u);                                              // bucket on the rim
+      ctx.fillStyle = '#5b3a1f'; ctx.fillRect(px+11.5*u, py+3.5*u, 2.2*u, 0.7*u);
+    } else if(t==='O'){
+      ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16, g = (Math.sin(performance.now()/400 + wx)+1)/2;
+      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(px+2*u, py+13.5*u, 12*u, 2*u);
+      ctx.fillStyle = '#4a4650'; ctx.fillRect(px+3*u, py+8*u, 10*u, 6*u);
+      ctx.fillStyle = '#5f5a68'; ctx.fillRect(px+2*u, py+6.5*u, 12*u, 2.5*u);
+      ctx.fillStyle = `rgba(160,120,255,${0.5+0.4*g})`;
+      ctx.beginPath(); ctx.moveTo(px+8*u, py+0.5*u); ctx.lineTo(px+11*u, py+4.5*u); ctx.lineTo(px+8*u, py+6.5*u); ctx.lineTo(px+5*u, py+4.5*u); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fillRect(px+7*u, py+2*u, 1.5*u, 2*u);
+      ctx.fillStyle = `rgba(190,160,255,${0.4+0.4*g})`; ctx.fillRect(px+5*u, py+10*u, 2*u, 1.5*u); ctx.fillRect(px+9*u, py+10*u, 2*u, 1.5*u);
+    } else if(t==='E'){
+      ctx.fillStyle = '#4a2f3d'; ctx.fillRect(px,py,TILE,TILE);
+      ctx.fillStyle = ((wx+wy)%2===0) ? '#573648' : '#432a37'; ctx.fillRect(px+1,py+1,TILE-2,TILE-2);
+    } else if(t==='D'||t==='H'||t==='L'||t==='K'){
+      ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
+      const u = TILE/16;
+      ctx.fillStyle = '#4a4650'; ctx.fillRect(px+1*u, py+1*u, 14*u, 14*u);           // stone frame
+      ctx.fillStyle = '#15131a'; ctx.fillRect(px+3*u, py+3*u, 10*u, 10*u);           // dark hole
+      const steps = ['#6a6570','#58535f','#46424d','#34313b'];
+      for(let i=0;i<4;i++){ ctx.fillStyle = steps[i]; ctx.fillRect(px+3*u, py+(3+i*2.5)*u, 10*u, 2*u); }
+      if(t==='D'){                                                                   // barricaded until paid
+        ctx.fillStyle = '#8a5a34'; ctx.fillRect(px+1*u, py+5*u, 14*u, 2*u); ctx.fillRect(px+1*u, py+10*u, 14*u, 2*u);
+        ctx.fillStyle = '#e0b030'; ctx.fillRect(px+7*u, py+7*u, 2*u, 3*u);
+      } else {
+        ctx.fillStyle = '#e0a030'; ctx.beginPath();
+        if(t==='L'){ ctx.moveTo(px+TILE/2, py+5*u); ctx.lineTo(px+11*u, py+11*u); ctx.lineTo(px+5*u, py+11*u); }
+        else { ctx.moveTo(px+TILE/2, py+11*u); ctx.lineTo(px+11*u, py+5*u); ctx.lineTo(px+5*u, py+5*u); }
+        ctx.fill();
+      }
+    } else if(t==='M'){
+      ctx.fillStyle = '#7d7975'; ctx.fillRect(px,py,TILE,TILE);
+    } else if(t==='N'){
+      ctx.fillStyle = '#3b3742'; ctx.fillRect(px,py,TILE,TILE);
+      speckle(px,py,wx,wy,7,'rgba(255,255,255,0.08)',1,3);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(px,py+TILE-4,TILE,4);
+    } else if(t==='6'||t==='9'){
+      ctx.fillStyle = GROUND;
+      ctx.fillRect(px,py,TILE,TILE);
+    } else if(t==='7'){
+      ctx.fillStyle = '#6ea8d8';
+      ctx.fillRect(px,py,TILE,TILE);
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      const wt = performance.now()/900;
+      const oy = ((Math.sin(wt+wx*0.9+wy*0.7)+1)/2)*(TILE-8)+4;
+      ctx.beginPath(); ctx.moveTo(px+4,py+oy); ctx.lineTo(px+TILE-4,py+oy); ctx.stroke();
+      if(state.map==='river' && (wx*7+wy*3)%13===0){   // lily pads
+        ctx.fillStyle = '#4f9a55'; ctx.beginPath(); ctx.ellipse(px+TILE/2, py+TILE/2, 8, 5, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#6ea8d8'; ctx.fillRect(px+TILE/2, py+TILE/2-1, 9, 2);
+        if((wx+wy)%2===0){ ctx.fillStyle = '#ff9ec4'; ctx.fillRect(px+TILE/2-4, py+TILE/2-4, 4, 4); }
+      }
+    } else if(t==='a'||t==='b'||t==='c'){
+      drawSprite(px, py, t==='b' ? ROOF_MID_TEX : ROOF_TEX, BUILDING_PALETTE, TILE/16, false);
+    } else if(t==='d'||t==='e'||t==='f'){
+      drawSprite(px, py, t==='e' ? WALL_DOOR : WALL_WINDOW, BUILDING_PALETTE, TILE/16, false);
+    } else if(t==='2'){
+      ctx.fillStyle = GROUND;
+      ctx.fillRect(px,py,TILE,TILE);
+      drawSprite(px, py, HOUSE_SPRITE, HOUSE_PALETTE, TILE/16, false);
+    } else if(t==='4'){
+      ctx.fillStyle = GROUND;
+      ctx.fillRect(px,py,TILE,TILE);
+      drawSprite(px, py, PERSON_SPRITE, NPC_PALETTE, TILE/16, false);
+    } else if(t==='5'){
+      ctx.fillStyle = GROUND;
+      ctx.fillRect(px,py,TILE,TILE);
+      ctx.fillStyle = '#c9955f';
+      ctx.fillRect(px+4,py+8,TILE-8,TILE-14);
+      ctx.fillStyle = '#7a5a35';
+      ctx.beginPath(); ctx.moveTo(px+2,py+8); ctx.lineTo(px+TILE/2,py-2); ctx.lineTo(px+TILE-2,py+8); ctx.fill();
+      ctx.fillStyle = '#fff8ec';
+      ctx.font = '9px monospace';
+      ctx.fillText('鶏', px+TILE/2-5, py+TILE/2+5);
+    } else if(t==='1'){
+      const ft = farmTile(wx,wy);
+      ctx.fillStyle = ft.tilled ? '#6b3f26' : '#8b5a3c';
+      ctx.fillRect(px,py,TILE,TILE);
+      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+      for(let i=6;i<TILE;i+=8){ ctx.beginPath(); ctx.moveTo(px+i,py); ctx.lineTo(px+i,py+TILE); ctx.stroke(); }
+      speckle(px,py,wx,wy,6,'rgba(0,0,0,0.13)',1,3);
+      speckle(px,py,wx,wy+90,3,'rgba(255,255,255,0.05)',1,2);
+      if(ft.planted){
+        if(ft.growth===0){
+          drawSprite(px, py, SEED_SPRITE, SEED_PALETTE, TILE/16, false);
+        } else if(ft.growth===1){
+          drawSprite(px, py, SPROUT_SPRITE, WHEAT_PALETTE, TILE/16, false);
+        } else if(ft.growth===2){
+          drawSprite(px, py, GROWING_SPRITE, WHEAT_PALETTE, TILE/16, false);
+        } else {
+          const cropDef = CROPS[ft.crop||'wheat'];
+          drawSprite(px, py, cropDef.sprite, cropDef.palette, TILE/16, false);
+        }
+      }
+      if(ft.watered){
+        ctx.fillStyle = 'rgba(110,168,216,0.35)';
+        ctx.fillRect(px,py,TILE,TILE);
+      }
+    }
+  }
+
+  let actionAnim = null;
+  function triggerActionAnim(tool){ actionAnim = { start: performance.now(), tool: tool||'hoe' }; }
+
+  function drawPlayer(camX, camY){
+    if(wellAnim){ drawPlayerWell(camX, camY); return; }
+    const px = (state.px-camX)*TILE, py = (state.py-camY)*TILE;
+    const tool = actionAnim ? actionAnim.tool : null;
+    const overhead = !!tool && tool!=='hoe';        // axe / pickaxe / sword: swing down from overhead
+    const DUR = tool==='sword' ? 300 : overhead ? 420 : 320;
+    let bob = 0;
+    if(overhead){
+      const p = (performance.now() - actionAnim.start)/DUR;
+      bob = p<0.4 ? -2*(p/0.4) : (p<0.65 ? 1.5 : 0);   // rise on wind-up, drop on the strike
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath(); ctx.ellipse(px+TILE/2, py+TILE-3, TILE*0.28, 4, 0, 0, Math.PI*2); ctx.fill();
+    const scale = TILE/16;
+    let sprite = BOY_FRONT, flip = false;
+    if(state.dir==='up') sprite = BOY_BACK;
+    else if(state.dir==='left'){ sprite = BOY_SIDE; flip = true; }
+    else if(state.dir==='right'){ sprite = BOY_SIDE; flip = false; }
+    if(invuln>0 && Math.floor(performance.now()/90)%2===0) ctx.globalAlpha = 0.35;
+    drawSprite(px, py+bob, sprite, PLAYER_PALETTE, scale, flip);
+    ctx.globalAlpha = 1;
+
+    if(actionAnim){
+      const age = performance.now() - actionAnim.start;
+      if(age > DUR){ actionAnim = null; }
+      else{
+        const p = age/DUR;
+        let swing, hx, hy, sign = 1;
+        if(!overhead){
+          swing = Math.sin(p*Math.PI)*80 - 25; // degrees
+          hx = px+TILE/2; hy = py+TILE*0.62;
+          if(state.dir==='left'){ hx -= 8; sign = -1; }
+          else if(state.dir==='right'){ hx += 8; sign = 1; }
+          else if(state.dir==='up'){ hy -= 6; }
+          else{ hy += 6; }
+        } else {
+          // overhead: raise the tool up and back, then bring it down hard over the top
+          if(p<0.4) swing = 100 + (p/0.4)*65;                              // raise
+          else if(p<0.65){ const q = (p-0.4)/0.25; swing = 165 + q*q*170; } // fast downswing
+          else swing = 335 + ((p-0.65)/0.35)*15;                           // follow-through
+          hy = py + TILE*0.58 + bob;
+          if(state.dir==='left'){ hx = px+TILE/2 - 6; sign = -1; }
+          else if(state.dir==='right'){ hx = px+TILE/2 + 6; }
+          else { hx = px+TILE/2 + 8; }
+        }
+        ctx.save();
+        ctx.translate(hx, hy);
+        ctx.rotate(swing*Math.PI/180*sign);
+        if(tool==='sword'){
+          ctx.fillStyle = '#6b4a2a'; ctx.fillRect(-2, -3, 4, 7);            // grip
+          ctx.fillStyle = '#d9b34a'; ctx.fillRect(-6, 3, 12, 3);            // guard
+          ctx.fillStyle = SWORD_COLORS[(state.swordLevel||1)-1]; ctx.fillRect(-2.5, 6, 5, 17);          // blade
+          ctx.fillStyle = '#ffffff'; ctx.fillRect(0.5, 6, 1.5, 17);
+          const en = state.enchant || {};                                    // enchantment glow
+          if(en.fire){ ctx.fillStyle = 'rgba(255,120,30,0.85)'; ctx.fillRect(-2.5, 6, 1.5, 17); }
+          if(en.wave){ ctx.fillStyle = 'rgba(110,220,255,0.85)'; ctx.fillRect(1.5, 6, 1.2, 17); }
+          if(en.knock){ ctx.fillStyle = '#fff27a'; ctx.fillRect(-1, 3.5, 2, 2); }
+          ctx.fillStyle = SWORD_COLORS[(state.swordLevel||1)-1];
+          ctx.beginPath(); ctx.moveTo(-2.5, 23); ctx.lineTo(0, 27); ctx.lineTo(2.5, 23); ctx.closePath(); ctx.fill();
+        } else {
+          ctx.fillStyle = '#6b4a2a';
+          ctx.fillRect(-2, -3, 4, 20);
+          if(tool==='axe'){
+            ctx.fillStyle = '#b8bcc4'; ctx.fillRect(-1, 11, 9, 8);
+            ctx.fillStyle = '#e6e9ee'; ctx.fillRect(6, 11, 3, 8);
+          } else if(tool==='pick'){
+            ctx.fillStyle = '#9a9a9a'; ctx.fillRect(-9, 11, 18, 3);
+            ctx.fillRect(-9, 11, 3, 7); ctx.fillRect(6, 11, 3, 7);
+          } else {
+            ctx.fillStyle = '#9a9a9a'; ctx.fillRect(-7, 15, 14, 6);
+          }
+        }
+        ctx.restore();
+      }
+    }
+  }
+
+  let effects = [];
+  let fadeStart = 0;
+  let GROUND = '#a9c96e';
+  function addEffect(wx,wy,type,color){ effects.push({wx,wy,type,color,start:performance.now()}); }
+
+  function draw(){
+    GROUND = state.map==='dungeon' ? DUNGEON_GROUND[floorTier(state.floor||1)] : state.map==='cave' ? '#6f6b76' : state.map==='north' ? '#8fbf86' : state.map==='river' ? '#9fcf97' : '#a9c96e';
+    const {camX, camY} = camera();
+    ctx.fillStyle = GROUND;                                   // never leave old frames showing
+    ctx.fillRect(0, 0, VIEW_COLS*TILE + TILE, VIEW_ROWS*TILE + TILE);
+    const startX = Math.floor(camX), startY = Math.floor(camY);
+    const trees = [];
+    const mts = [];
+    const overlays = [];
+    for(let wy=startY; wy<=startY+Math.ceil(VIEW_ROWS); wy++){
+      for(let wx=startX; wx<=startX+Math.ceil(VIEW_COLS); wx++){
+        const sx = (wx-camX)*TILE, sy = (wy-camY)*TILE;
+        const tt = tileAt(wx,wy);
+        if(tt==='6'||tt==='9') trees.push([sx,sy,wx,wy,tt]);
+        if(tt==='M' && tileAt(wx,wy+1)!=='M') mts.push([sx,sy,wx]);
+        if(tt==='G'||tt==='Z'||tt==='T'||tt==='u'||tt==='v'||tt==='U'||tt==='V'||tt==='X'||tt==='Q') overlays.push([sx,sy,wx,tt]);
+        drawTile(wx, wy, sx/TILE, sy/TILE);
+      }
+    }
+    if(state.map==='home'){
+      for(const c of state.sheep) drawSheep((c.x-camX)*TILE, (c.y-camY)*TILE, c.face||1, !c.fed && !c.woolReady, !!c.woolReady);
+      for(const c of state.cows) drawCow((c.x-camX)*TILE, (c.y-camY)*TILE, c.face||1, !c.fed && !c.milkReady, !!c.milkReady);
+    }
+    for(const [msx,msy,mwx] of mts) drawMountainSlice(msx,msy,mwx);
+    // Trees drawn bigger than their tile, overflowing into neighbors, on top of the base grid
+    const tScale = (TILE/16)*2.6;
+    const tSize = 16*tScale;
+    const nowT = performance.now();
+    for(const [sx,sy,wx,wy,tt] of trees){
+      let shake = 0;
+      for(const e of effects){
+        if(e.type==='chop' && e.wx===wx && e.wy===wy){
+          const a = (nowT-e.start)/600;
+          if(a<0.5) shake = Math.sin(a*60)*(1-a*2)*3;
+        }
+      }
+      const spr = (tt==='6' && state.fruit[K(wx,wy)]) ? TREE_SPRITE : TREE_NOFRUIT;
+      drawSprite(sx + TILE/2 - tSize/2 + shake, sy + TILE - tSize, spr, TREE_PALETTE, tScale, false);
+    }
+    // Gate and exit arrows on top of the border trees
+    for(const [ox,oy,owx,ot] of overlays){
+      const u = TILE/16;
+      if(ot==='G'||ot==='Z'||ot==='T'){
+        const left = (owx%2===0);
+        ctx.fillStyle = '#8a5a34';
+        ctx.fillRect(ox,oy+3*u,TILE,2*u); ctx.fillRect(ox,oy+9*u,TILE,2*u);
+        for(let i=1;i<6;i++) ctx.fillRect(ox+i*TILE/6-u,oy+2*u,2*u,11*u);
+        ctx.fillStyle = '#5a3a20'; ctx.fillRect(left?ox:ox+TILE-3*u, oy+1*u, 3*u, 14*u);
+        ctx.fillStyle = '#e0b030'; ctx.fillRect(left?ox+TILE-3*u:ox, oy+6*u, 3*u, 4*u);
+      } else {
+        ctx.fillStyle = '#e0a030';
+        ctx.beginPath();
+        if(ot==='u'||ot==='V'||ot==='X'){ ctx.moveTo(ox+TILE/2,oy+6); ctx.lineTo(ox+TILE-7,oy+TILE-7); ctx.lineTo(ox+7,oy+TILE-7); }
+        else { ctx.moveTo(ox+TILE/2,oy+TILE-6); ctx.lineTo(ox+TILE-7,oy+7); ctx.lineTo(ox+7,oy+7); }
+        ctx.fill();
+      }
+    }
+    // Tilling dust effects
+    const now = performance.now();
+    effects = effects.filter(e => now - e.start < 600);
+    for(const e of effects){
+      const age = (now - e.start)/600;
+      const ex = (e.wx - camX + 0.5)*TILE, ey = (e.wy - camY + 0.5)*TILE;
+      if(e.type==='wood'||e.type==='drop'){
+        const tx = (state.px+0.5-camX)*TILE, ty = (state.py+0.5-camY)*TILE;
+        const p = Math.min(1, age*1.2);
+        for(let i=0;i<3;i++){
+          const x = ex + (tx-ex)*p + (i-1)*8*(1-p);
+          const y = ey - 8 + (ty-ey+8)*p - Math.sin(p*Math.PI)*22;
+          if(e.type==='drop'){
+            ctx.fillStyle = e.color; ctx.fillRect(x-4, y-4, 8, 8);
+            ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillRect(x-4, y-4, 8, 3);
+          } else {
+            ctx.fillStyle = '#8a5a34'; ctx.fillRect(x-6, y-2.5, 12, 5);
+            ctx.fillStyle = '#c9955f'; ctx.fillRect(x-6, y-2.5, 3, 5);
+          }
+        }
+        continue;
+      }
+      ctx.globalAlpha = Math.max(0, 1 - age*1.1);
+      ctx.fillStyle = e.type==='water' ? '#6ea8d8' : e.type==='plant' ? '#5fa85f' : e.type==='chop' ? '#c9955f' : e.type==='rockchip' ? '#9aa0a8' : e.type==='pick' ? '#e08030' : '#6b3f26';
+      for(let i=0;i<6;i++){
+        const ang = (i/6)*Math.PI*2 + age*2.5;
+        const dist = age*16;
+        ctx.beginPath();
+        ctx.arc(ex+Math.cos(ang)*dist, ey+Math.sin(ang)*dist - age*10, 2.5+age*2.5, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+    if(state.map==='dungeon'){ drawBossGround(camX, camY); drawEnemies(camX, camY); drawWaves(camX, camY); drawBossShots(camX, camY); }
+    drawFishingSpot(camX, camY);
+    drawPlayer(camX, camY);
+    drawFishing(camX, camY);
+    if(state.map==='cave' || state.map==='dungeon'){   // dark: light only around the player
+      const cx = (state.px+0.5-camX)*TILE, cy = (state.py+0.5-camY)*TILE;
+      const R = Math.max(VIEW_COLS, VIEW_ROWS)*TILE*0.55;
+      const g = ctx.createRadialGradient(cx, cy, TILE*2.2, cx, cy, R);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, state.map==='dungeon' ? 'rgba(0,0,0,0.82)' : 'rgba(0,0,0,0.7)');
+      ctx.fillStyle = g; ctx.fillRect(0,0,VIEW_COLS*TILE,VIEW_ROWS*TILE);
+    }
+    if(state.map==='dungeon' && invuln>0.55){
+      ctx.fillStyle = `rgba(210,30,40,${(invuln-0.55)*0.45})`; ctx.fillRect(0,0,VIEW_COLS*TILE,VIEW_ROWS*TILE);
+    }
+    const wfa = wellFadeAlpha();
+    if(wfa>0){ ctx.fillStyle = `rgba(0,0,0,${wfa})`; ctx.fillRect(0, 0, VIEW_COLS*TILE + TILE, VIEW_ROWS*TILE + TILE); }
+    drawHearts();
+    drawFloorLabel();
+    drawBossBar();
+    if(fadeStart){
+      const a = 1 - (performance.now()-fadeStart)/600;
+      if(a<=0) fadeStart = 0;
+      else { ctx.fillStyle = `rgba(0,0,0,${a})`; ctx.fillRect(0,0,VIEW_COLS*TILE,VIEW_ROWS*TILE); }
+    }
+    drawDragGuide();
+  }
+
+  load();
+  curLayout = MAP_LAYOUTS[state.map] || HOME;
+  setMapSize(MAP_LAYOUTS[state.map] ? state.map : 'home');
+  if(state.map==='dungeon'){ buildFloor(state.floor||1); spawnEnemies(); }
+  if(state.map==='dungeon' && state.hp<=0) openDeath();            // closed the game at 0 hearts: the choice is still waiting
+  state.bossBeaten = state.bossBeaten || {};
+  for(const k of Object.keys(state.bossDone||{})) state.bossBeaten[k] = true;                // old saves: keep their checkpoints
+  if(state.wellsOpen){ for(const k of Object.keys(WELLS)) state.wells[k] = true; state.wellsOpen = false; }   // old saves: everything was unlocked at once
+  if(state.map!=='home' && collides(state.px, state.py)){ const m0 = state.map; state.map = 'home'; goMap(m0); }   // saved spot is inside a wall after a map change
+  if(!state.fruit){ state.fruit = {}; for(const k of treeKeys.concat(treeKeysN, treeKeysR)) state.fruit[k] = Math.random()<0.25; }
+  updateHud();
+  updateMapName();
+
+  function goMap(name){
+    const prev = state.map;
+    state.map = name;
+    setMapSize(name);
+    curLayout = MAP_LAYOUTS[name];
+    enemies = []; waves = []; bossShots = []; hazards = []; invuln = 0; atkCool = 0; deathPending = false;
+    if(name==='north' && prev==='cave'){ state.px = 22.5; state.py = 3; state.dir = 'down'; }
+    else if(name==='north'){ state.px = 26.5; state.py = ROWS-3; state.dir = 'up'; }
+    else if(name==='dungeon'){ buildFloor(state.floor||1); state.px = DUNGEON_START.spawnX; state.py = DUNGEON_START.spawnY; state.dir = 'down'; state.hp = 10; spawnEnemies(); }
+    else if(name==='cave' && prev==='dungeon'){ state.px = CAVE_STAIRS.spawnX; state.py = CAVE_STAIRS.spawnY; state.dir = 'down'; }
+    else if(name==='cave'){ state.px = 15.5; state.py = ROWS-3; state.dir = 'up'; }
+    else if(name==='river'){ state.px = 3.5; state.py = 2; state.dir = 'down'; }
+    else if(prev==='river'){ state.px = 3.5; state.py = ROWS-3; state.dir = 'up'; }
+    else { state.px = 26.5; state.py = 2; state.dir = 'down'; }
+    updateMapName();
+    effects = []; actionAnim = null; fishing.phase = 'idle';
+    fadeStart = performance.now();
+    setMsg(name==='dungeon' ? `🪜 地下${state.floor||1}階に来た!敵を倒して進もう(アクションで剣を振る)`
+         : name==='cave' ? '🕳️ 洞窟に来た!暗いけど、岩から鉄がよく出るみたい'
+         : name==='north' ? '⛰️ 北の山に来た!岩が鉄を含みやすいみたい'
+         : name==='river' ? '🏞️ 川の国に来た!広い!釣りは2つの桟橋でできるよ🎣'
+         : '🏡 村に戻ってきた');
+    save();
+  }
+
+  let lastT = null;
+  function loop(t){
+    if(lastT===null) lastT = t;
+    const dt = Math.min((t-lastT)/1000, 0.05);
+    lastT = t;
+    let vx = stickVec.x, vy = stickVec.y;
+    if(vx===0 && vy===0){
+      if(keyVec.left) vx -= 1;
+      if(keyVec.right) vx += 1;
+      if(keyVec.up) vy -= 1;
+      if(keyVec.down) vy += 1;
+    }
+    if(!wellAnim) updatePosition(dt, vx, vy);
+    if(wellAnim) updateWell(dt);
+    const curT = tileAt(tileX(), tileY());
+    if(curT!=='H') stairLock = false;
+    if(curT!=='L' && curT!=='K') stairHold = 0;
+    if(curT==='u' && state.map==='home') goMap('north');
+    else if(curT==='v' && state.map==='north') goMap('home');
+    else if(curT==='U' && state.map==='home') goMap('river');
+    else if(curT==='V' && state.map==='river') goMap('home');
+    else if(curT==='X' && state.map==='north') goMap('cave');
+    else if(curT==='Q' && state.map==='cave') goMap('north');
+    else if(curT==='H' && state.map==='cave'){ if(!stairLock){ stairLock = true; openFloorSelect(); } }
+    else if((curT==='L' || curT==='K') && state.map==='dungeon'){
+      stairHold += dt;                                   // stand on the stairs for a moment (being knocked onto them does nothing)
+      if(stairHold >= 0.5){
+        stairHold = 0;
+        if(curT==='K') changeFloor((state.floor||1)+1, true);
+        else if((state.floor||1)<=1) goMap('cave');
+        else changeFloor(state.floor-1, false);
+      }
+    }
+    updateFishing(dt);
+    updateCows(dt);
+    updateSheep(dt);
+    const paused = !!document.querySelector('.shop.open');      // menus stop the clock and the dungeon
+    if(!paused){
+      state.dayTime = (state.dayTime||0) + dt;
+      if(state.dayTime >= DAY_SEC) sleep(true);
+    }
+    if(invuln>0) invuln = Math.max(0, invuln-dt);
+    if(atkCool>0) atkCool = Math.max(0, atkCool-dt);
+    if(!paused) updateEnemies(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  setInterval(save, 2500);
+})();
 
