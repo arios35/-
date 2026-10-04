@@ -1,4 +1,8 @@
   load();
+  for(const k of Object.keys(CROPS)){                         // 古いセーブには、あとから増えた作物の欄がないので補う
+    if(state.seedsByType[k]===undefined) state.seedsByType[k] = 0;
+    if(state.harvestedByType[k]===undefined) state.harvestedByType[k] = 0;
+  }
   curLayout = MAP_LAYOUTS[state.map] || HOME;
   setMapSize(MAP_LAYOUTS[state.map] ? state.map : 'home');
   if(state.map==='dungeon'){ buildFloor(state.floor||1); spawnEnemies(); }
