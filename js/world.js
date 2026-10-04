@@ -219,9 +219,17 @@
   cfr(27,12,28,19,'3');                      // road toward the south-east beach
   COAST[0][20]='z'; COAST[0][21]='z';        // back to the river area
   cput(23,6,'4');                            // villager
-  cput(17,9,'k');                            // coast well
+  cput(18,10,'k');                           // coast well(畑にかぶらないよう、北西の畑の下に置く)
   cput(9,6,'Y'); cput(30,21,'Y'); cput(8,21,'Y');   // treasure chests
-  for(const [nx,ny] of [[23,6],[17,9]]) clearAround(COAST,nx,ny,nx,ny,2);
+  // 南の広場:作物屋さん(左)と家の建設予定地(右)
+  cfr(20,14,21,18,'3');                      // 街道から南の広場へ
+  cfr(14,18,26,18,'3');                      // 店と建設予定地の前の道
+  cput(15,16,'a'); cput(16,16,'b'); cput(17,16,'c');   // 作物屋: 屋根
+  cput(15,17,'d'); cput(16,17,'e'); cput(17,17,'f');   // 作物屋: 壁とドア
+  cput(23,16,'r'); cput(24,16,'R'); cput(25,16,'x');   // 家の建設予定地
+  cput(23,17,'s'); cput(24,17,'S'); cput(25,17,'y');
+  clearAround(COAST,15,16,17,17,3); clearAround(COAST,23,16,25,17,3);
+  for(const [nx,ny] of [[23,6],[18,10]]) clearAround(COAST,nx,ny,nx,ny,2);
   for(const [cx,cy] of [[9,6],[30,21],[8,21]]) clearAround(COAST,cx,cy,cx,cy,1);
   clearAround(COAST,20,2,21,2,2);
   const treeKeysC = [];
