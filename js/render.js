@@ -67,12 +67,20 @@
         ctx.fillStyle = '#7a5230'; ctx.fillRect(px+1*u,py,2*u,TILE); ctx.fillRect(px+13*u,py,2*u,TILE);
       }
     } else if(t==='F'){
-      ctx.fillStyle = '#6ea8d8'; ctx.fillRect(px,py,TILE,TILE);
+      ctx.fillStyle = state.map==='coast' ? '#4f93cf' : '#6ea8d8'; ctx.fillRect(px,py,TILE,TILE);
       const u = TILE/16;
+      const horiz = (tileAt(wx-1,wy)==='F' || tileAt(wx+1,wy)==='F') && tileAt(wx,wy-1)!=='F' && tileAt(wx,wy+1)!=='F';
+      if(horiz){                                        // 横向きの桟橋(海岸の西)
+        ctx.fillStyle = '#c39a5c'; ctx.fillRect(px,py+3*u,TILE,10*u);
+        ctx.strokeStyle = 'rgba(90,58,32,0.55)';
+        for(let i=0;i<4;i++){ ctx.beginPath(); ctx.moveTo(px+i*4*u+2*u,py+3*u); ctx.lineTo(px+i*4*u+2*u,py+13*u); ctx.stroke(); }
+        ctx.fillStyle = '#6b4a2a'; ctx.fillRect(px,py+2*u,TILE,2*u); ctx.fillRect(px,py+12*u,TILE,2*u);
+      } else {
       ctx.fillStyle = '#c39a5c'; ctx.fillRect(px+3*u,py,10*u,TILE);
       ctx.strokeStyle = 'rgba(90,58,32,0.55)';
       for(let i=0;i<4;i++){ ctx.beginPath(); ctx.moveTo(px+3*u,py+i*4*u+2*u); ctx.lineTo(px+13*u,py+i*4*u+2*u); ctx.stroke(); }
       ctx.fillStyle = '#6b4a2a'; ctx.fillRect(px+2*u,py,2*u,TILE); ctx.fillRect(px+12*u,py,2*u,TILE);
+      }
     } else if(t==='l'||t==='m'||t==='n'){
       drawSprite(px, py, t==='m' ? ROOF_MID_TEX : ROOF_TEX, HOUSE2_PALETTE, TILE/16, false);
     } else if(t==='o'||t==='p'||t==='q'){
@@ -407,8 +415,9 @@
           if(a<0.5) shake = Math.sin(a*60)*(1-a*2)*3;
         }
       }
-      const spr = (tt==='6' && state.fruit[K(wx,wy)]) ? TREE_SPRITE : TREE_NOFRUIT;
-      drawSprite(sx + TILE/2 - tSize/2 + shake, sy + TILE - tSize, spr, TREE_PALETTE, tScale, false);
+      const tx0 = sx + TILE/2 - tSize/2 + shake, ty0 = sy + TILE - tSize;
+      drawSprite(tx0, ty0, TREE_NOFRUIT, TREE_PALETTE, tScale, false);
+      if(tt==='6' && state.fruit[K(wx,wy)]) drawTreeFruits(tx0, ty0, tScale, wx, wy);   // 実は別に大きく描く
     }
     // Gate and exit arrows on top of the border trees
     for(const [ox,oy,owx,ot] of overlays){
