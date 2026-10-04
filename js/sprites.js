@@ -159,6 +159,39 @@
   const GOLD_PALETTE = { G:'#8c9098', H:'#b8bdc6', D:'#666a72', Y:'#f2c230' };
   const TREE_NOFRUIT = TREE_SPRITE.map(r=>r.replace(/A/g,'L'));
 
+  // ---- 木になる果物 ----
+  // 新しい果物を足すときは、FRUITS に1つ書き足して、fruitTypeOf() で「どの木にどの果物が実るか」を振り分けるだけでよい。
+  //   key: 持ち物の名前(state[key] に入る) / size: 実の大きさ(絵の1ドット=1) / 色: 輪郭・本体・影・ハイライト・へた・葉・皮のつぶつぶ
+  const FRUITS = {
+    mikan: { key:'mikan', label:'みかん', emoji:'🍊', size:1.05,
+             outline:'#9c4a06', body:'#f7931e', shade:'#d4670a', light:'#ffe0a8', calyx:'#2f7a35', leaf:'#74c474', dots:'rgba(150,70,0,0.38)' },
+  };
+  function fruitTypeOf(wx,wy){ return 'mikan'; }          // いまはみかんだけ
+  const FRUIT_SLOTS = [[5.0,3.7],[9.2,2.9],[7.2,5.3],[10.8,5.9],[4.4,6.3],[8.4,7.6]];   // 木の絵(16x16)の葉っぱの上で、実がなる位置
+  function drawFruit(f, cx, cy, r){                        // 丸い実を1個描く(大きめ・縁取り・影・ハイライト・へたと葉つき)
+    ctx.fillStyle = f.outline; ctx.beginPath(); ctx.arc(cx, cy, r+1.1, 0, Math.PI*2); ctx.fill();      // 縁取り:葉の緑から浮かせる
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.clip();
+    ctx.fillStyle = f.shade; ctx.fillRect(cx-r, cy-r, r*2, r*2);                                        // 右下の影
+    ctx.fillStyle = f.body; ctx.beginPath(); ctx.arc(cx-r*0.2, cy-r*0.22, r*0.92, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = f.dots;                                                                              // 皮のつぶつぶ
+    for(const [dx,dy] of [[-0.1,0.28],[0.38,0.0],[-0.38,-0.02],[0.12,0.58],[0.5,0.42],[-0.3,0.5]]) ctx.fillRect(cx+dx*r-0.6, cy+dy*r-0.6, 1.3, 1.3);
+    ctx.restore();
+    ctx.fillStyle = f.light; ctx.beginPath(); ctx.ellipse(cx-r*0.4, cy-r*0.42, r*0.3, r*0.17, -0.7, 0, Math.PI*2); ctx.fill();   // ハイライト
+    ctx.fillStyle = f.calyx; ctx.beginPath(); ctx.ellipse(cx, cy-r*0.9, r*0.36, r*0.2, 0, 0, Math.PI*2); ctx.fill();               // へた
+    ctx.fillStyle = f.leaf; ctx.beginPath(); ctx.ellipse(cx+r*0.52, cy-r*1.04, r*0.44, r*0.2, -0.5, 0, Math.PI*2); ctx.fill();   // 小さな葉
+  }
+  function drawTreeFruits(x0, y0, scale, wx, wy){          // 木1本ぶんの実。数と位置は場所ごとに決まった形(毎回同じ)
+    const f = FRUITS[fruitTypeOf(wx,wy)]; if(!f) return;
+    const idx = [];
+    for(let i=0;i<FRUIT_SLOTS.length;i++) if(hash2(wx,wy,100+i) < 0.78) idx.push(i);
+    for(const i of [3,4,5,2,0,1]) if(idx.length<4 && !idx.includes(i)) idx.push(i);     // 少なくとも4個。足りないときは、かたよらないように右・左・下の順で足す
+    for(const i of idx){
+      const jx = (hash2(wx,wy,200+i)-0.5)*0.5, jy = (hash2(wx,wy,300+i)-0.5)*0.5;
+      drawFruit(f, x0 + (FRUIT_SLOTS[i][0]+jx)*scale, y0 + (FRUIT_SLOTS[i][1]+jy)*scale, f.size*scale);
+    }
+  }
+
   // Detailed house/shop sprite (roof, windows, door)
   const HOUSE_SPRITE = [
     "................",
