@@ -99,7 +99,7 @@
     { id:'goldOre', icon:'🥇', label:'金鉱石' }, { id:'mikan', icon:'🍊', label:'みかん' },
     { id:'milk', icon:'🥛', label:'牛乳' }, { id:'wool', icon:'🧶', label:'羊毛' }, { id:'mushroom', icon:'🍄', label:'きのこ' },
     { id:'crop:wheat', icon:'🌾', label:'小麦' }, { id:'crop:tomato', icon:'🍅', label:'トマト' },
-    { id:'crop:corn', icon:'🌽', label:'とうもろこし' },
+    { id:'crop:corn', icon:'🌽', label:'とうもろこし' }, { id:'crop:carrot', icon:'🥕', label:'にんじん' },
     { id:'fish:minnow', icon:'🐟', label:'小魚' }, { id:'fish:ayu', icon:'🐟', label:'アユ' },
     { id:'fish:carp', icon:'🐠', label:'コイ' }, { id:'fish:yamame', icon:'🐡', label:'ヤマメ' },
     { id:'fish:catfish', icon:'🐋', label:'大ナマズ' },
@@ -159,19 +159,29 @@
   };
   document.getElementById('closeStorage').onclick = ()=>document.getElementById('storageModal').classList.remove('open');
 
-  // ---- House construction site (north map) ----
-  const SITE_COST = { gold:2500, wood:50, stone:40, iron:15 };
+  // ---- House construction sites (北の山 / 南の海岸) ----
+  const SITES = {
+    north: { flag:'northHouse', cost:{ gold:2500, wood:50, stone:40, iron:15 },
+      conds: ()=>{
+        const lv = Math.max(state.toolLevel, state.axeLevel, state.pickLevel);
+        return [
+          { label:'牛を2頭以上飼う', ok: state.cows.length>=2, now:`${state.cows.length}/2頭` },
+          { label:'いずれかの道具をLv3にする', ok: lv>=3, now:`最高Lv${lv}` },
+          { label:'作物を累計20個収穫する', ok: (state.totalHarvest||0)>=20, now:`${state.totalHarvest||0}/20個` },
+        ];
+      } },
+    coast: { flag:'coastHouse', cost:{ gold:4000, wood:80, stone:60, iron:25 },
+      conds: ()=>[
+        { label:'羊を2頭以上飼う', ok: state.sheep.length>=2, now:`${state.sheep.length}/2頭` },
+        { label:'作物を累計60個収穫する', ok: (state.totalHarvest||0)>=60, now:`${state.totalHarvest||0}/60個` },
+      ] },
+  };
   const SITE_ICON = { gold:'💰', wood:'🪵', stone:'🪨', iron:'🔩' };
-  function siteConds(){
-    const lv = Math.max(state.toolLevel, state.axeLevel, state.pickLevel);
-    return [
-      { label:'牛を2頭以上飼う', ok: state.cows.length>=2, now:`${state.cows.length}/2頭` },
-      { label:'いずれかの道具をLv3にする', ok: lv>=3, now:`最高Lv${lv}` },
-      { label:'作物を累計20個収穫する', ok: (state.totalHarvest||0)>=20, now:`${state.totalHarvest||0}/20個` },
-    ];
-  }
+  const curSite = ()=>SITES[state.map] || SITES.north;
+  function siteConds(){ return curSite().conds(); }
   function siteReady(){
-    return siteConds().every(c=>c.ok) && Object.keys(SITE_COST).every(k=>state[k]>=SITE_COST[k]);
+    const S = curSite();
+    return siteConds().every(c=>c.ok) && Object.keys(S.cost).every(k=>state[k]>=S.cost[k]);
   }
   function renderSite(msg){
     const list = document.getElementById('siteList');
@@ -182,15 +192,17 @@
       row.appendChild(span); list.appendChild(row);
     };
     for(const c of siteConds()) add(c.ok, `${c.label}(${c.now})`);
-    for(const k of Object.keys(SITE_COST)) add(state[k]>=SITE_COST[k], `${SITE_ICON[k]} ${SITE_COST[k]}${k==='gold'?'G':'個'}を渡す(所持${state[k]})`);
+    const COST = curSite().cost;
+    for(const k of Object.keys(COST)) add(state[k]>=COST[k], `${SITE_ICON[k]} ${COST[k]}${k==='gold'?'G':'個'}を渡す(所持${state[k]})`);
     document.getElementById('siteInfo').textContent = msg || (siteReady() ? '準備OK!建設できるよ' : 'まだ条件・材料が足りないよ');
   }
   function openSite(){ document.getElementById('siteModal').classList.add('open'); renderSite(); }
   document.getElementById('closeSite').onclick = ()=>document.getElementById('siteModal').classList.remove('open');
   document.getElementById('buildHouse').onclick = ()=>{
     if(!siteReady()){ renderSite('まだ条件・材料が足りないよ'); return; }
-    for(const k of Object.keys(SITE_COST)) state[k] -= SITE_COST[k];
-    state.northHouse = true;
+    const S = curSite();
+    for(const k of Object.keys(S.cost)) state[k] -= S.cost[k];
+    state[S.flag] = true;
     document.getElementById('siteModal').classList.remove('open');
     updateHud(); save();
     setMsg('🏠 家が完成した!家でアクションすると1日を過ごせるよ');
