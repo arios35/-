@@ -101,3 +101,38 @@
   };
   document.getElementById('closeShop').onclick = closeShop;
   document.getElementById('btnAction').addEventListener('pointerdown', (e)=>{ e.preventDefault(); action(); });
+
+  // ---- 南の海岸の作物屋(作物だけを扱う店。小麦とトマトの種は置いていない) ----
+  const CROP_SHOP_SEEDS = ['corn','carrot'];
+  function cropStock(){ let n = 0, total = 0; for(const k of Object.keys(CROPS)){ const c = state.harvestedByType[k]||0; n += c; total += c*CROPS[k].sellPrice; } return { n, total }; }
+  function renderCropShop(msg){
+    const list = document.getElementById('cropShopSeeds'); list.innerHTML = '';
+    for(const k of CROP_SHOP_SEEDS){
+      const c = CROPS[k], row = document.createElement('div'); row.className = 'shop-item';
+      const span = document.createElement('span'); span.textContent = `${c.emoji} ${c.label}の種 (${c.seedCost}G)`;
+      const b = document.createElement('button'); b.textContent = '買う'; b.onclick = ()=>buyCropShopSeed(k);
+      row.appendChild(span); row.appendChild(b); list.appendChild(row);
+    }
+    const st = cropStock();
+    document.getElementById('cs_crops').textContent = `${st.n}個 → ${st.total}G`;
+    document.getElementById('cropShopInfo').textContent = msg || `所持金: ${state.gold}G`;
+  }
+  function openCropShop(){ document.getElementById('cropShopModal').classList.add('open'); renderCropShop(); }
+  function buyCropShopSeed(k){
+    const c = CROPS[k];
+    if(state.gold<c.seedCost){ renderCropShop('お金が足りないよ'); return; }
+    state.gold -= c.seedCost; state.seedsByType[k] = (state.seedsByType[k]||0) + 1; state.selectedCrop = k;
+    updateHud(); save();
+    renderCropShop(`${c.label}の種を買って選択したよ${c.emoji}(所持${state.seedsByType[k]})`);
+  }
+  document.getElementById('csSellCrops').onclick = ()=>{
+    let total = 0; const sold = [];
+    for(const k of Object.keys(CROPS)){
+      const n = state.harvestedByType[k]||0;
+      if(n>0){ total += n*CROPS[k].sellPrice; sold.push(`${CROPS[k].emoji}${n}`); state.harvestedByType[k] = 0; }
+    }
+    if(!total){ renderCropShop('売れる作物がないよ'); return; }
+    state.gold += total; updateHud(); save();
+    renderCropShop(`${sold.join(' ')} 売れて+${total}G!`);
+  };
+  document.getElementById('closeCropShop').onclick = ()=>document.getElementById('cropShopModal').classList.remove('open');
