@@ -4,7 +4,7 @@
     const cur = tileAt(tileX(), tileY());
     if(cur==='1'){ farmAction(); return; }
     if(cur==='F'){ fishAction(); return; }
-    if(nearAny(SHOP_CHARS)){ if(state.map==='north') openNorthShop(); else if(state.map==='river') openFishShop(); else openShop(); return; }
+    if(nearAny(SHOP_CHARS)){ if(state.map==='north') openNorthShop(); else if(state.map==='river') openFishShop(); else if(state.map==='coast') openCropShop(); else openShop(); return; }
     if(nearType('4')){ talkNPC(); return; }
     if(nearType('5')){ chickenAction(); return; }
     if(state.map==='home' && nearRanch()){ ranchAction(); return; }
@@ -191,7 +191,9 @@
     '木のそばにはきのこも生えてるよ🍄',
     '西の桟橋では海の魚が釣れるよ。東の湖と同じで、レアな魚が多いんだ🎣',
     '東と北西と南東に広い畑があるよ。クワを強化すると、まとめて耕せて楽だよ🌾',
-    '釣った魚は、川の国の釣具屋が高く買い取ってくれるよ'
+    '釣った魚は、川の国の釣具屋が高く買い取ってくれるよ',
+    '南の広場に作物屋があるよ。にんじんの種はそこでしか売ってないんだ🥕',
+    '作物屋の隣は家の建設予定地さ。畑のそばに家があると、すぐ寝られて便利だよ🏠'
   ];
   function talkNPC(){
     const m = state.map;
