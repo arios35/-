@@ -128,6 +128,7 @@
           <span class="seed" data-crop="wheat">🌾 <b id="seed_wheat">3</b></span>
           <span class="seed" data-crop="tomato">🍅 <b id="seed_tomato">0</b></span>
           <span class="seed" data-crop="corn">🌽 <b id="seed_corn">0</b></span>
+          <span class="seed" data-crop="carrot">🥕 <b id="seed_carrot">0</b></span>
         </span>
         <span>🥚 <b id="eggs">0</b></span>
         <span>🪵 <b id="wood">0</b></span>
@@ -279,6 +280,17 @@
     </div>
   </div>
 
+  <div class="shop" id="cropShopModal">
+    <div class="shop-box">
+      <h2>🌽 作物屋さん</h2>
+      <p class="sub">作物だけを扱うお店。小麦とトマトの種は置いてないよ。</p>
+      <div id="cropShopSeeds"></div>
+      <div class="shop-item"><span>作物をまとめて売る<br><small id="cs_crops"></small></span><button id="csSellCrops">売る</button></div>
+      <p class="sub" id="cropShopInfo" style="margin-top:8px;"></p>
+      <button class="close-shop" id="closeCropShop">閉じる</button>
+    </div>
+  </div>
+
   <div class="shop" id="shopModal">
     <div class="shop-box">
       <h2>🏪 種屋さん</h2>
@@ -324,24 +336,24 @@
   </div>
 
 <!-- 読み込み順を変えないこと(上から順に実行される) -->
-<script src="js/core.js?v=6"></script>
-<script src="js/world.js?v=6"></script>
-<script src="js/dungeon-gen.js?v=6"></script>
-<script src="js/state.js?v=6"></script>
-<script src="js/sprites.js?v=6"></script>
-<script src="js/interact.js?v=6"></script>
-<script src="js/buildings.js?v=6"></script>
-<script src="js/craft.js?v=6"></script>
-<script src="js/wells.js?v=6"></script>
-<script src="js/fishing.js?v=6"></script>
-<script src="js/dungeon.js?v=6"></script>
-<script src="js/boss.js?v=6"></script>
-<script src="js/combat.js?v=6"></script>
-<script src="js/dungeon-draw.js?v=6"></script>
-<script src="js/gather.js?v=6"></script>
-<script src="js/shop.js?v=6"></script>
-<script src="js/input.js?v=6"></script>
-<script src="js/render.js?v=6"></script>
-<script src="js/main.js?v=6"></script>
+<script src="js/core.js?v=7"></script>
+<script src="js/world.js?v=7"></script>
+<script src="js/dungeon-gen.js?v=7"></script>
+<script src="js/state.js?v=7"></script>
+<script src="js/sprites.js?v=7"></script>
+<script src="js/interact.js?v=7"></script>
+<script src="js/buildings.js?v=7"></script>
+<script src="js/craft.js?v=7"></script>
+<script src="js/wells.js?v=7"></script>
+<script src="js/fishing.js?v=7"></script>
+<script src="js/dungeon.js?v=7"></script>
+<script src="js/boss.js?v=7"></script>
+<script src="js/combat.js?v=7"></script>
+<script src="js/dungeon-draw.js?v=7"></script>
+<script src="js/gather.js?v=7"></script>
+<script src="js/shop.js?v=7"></script>
+<script src="js/input.js?v=7"></script>
+<script src="js/render.js?v=7"></script>
+<script src="js/main.js?v=7"></script>
 </body>
 </html>
