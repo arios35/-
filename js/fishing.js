@@ -20,7 +20,7 @@
   }
   function pickFish(){
     const keys = Object.keys(FISH);
-    const lv = state.rodLevel||1, east = state.map==='river' && state.px>=32;   // the east lake has rarer fish
+    const lv = state.rodLevel||1, east = (state.map==='river' && state.px>=32) || state.map==='coast';   // 東の湖と海は、レアな魚が多い
     const mul = { carp: east?1.15:1, yamame:(1+0.5*(lv-1))*(east?1.3:1), catfish:(1+0.8*(lv-1))*(east?1.4:1) };
     const w = k=>FISH[k].w*(mul[k]||1);
     let r = Math.random()*keys.reduce((a,k)=>a+w(k),0);
@@ -72,9 +72,10 @@
 
   // ---- Fishing spot marker: a rod leaning on the pier entrance + bobbing icon ----
   function drawFishingSpot(camX, camY){
-    if(state.map !== 'river') return;
+    const spots = state.map==='river' ? FISH_SPOTS : state.map==='coast' ? COAST_FISH_SPOTS : null;
+    if(!spots) return;
     const u = TILE/16;
-    for(const [tx,ty] of FISH_SPOTS){
+    for(const [tx,ty] of spots){
       const px = (tx-camX)*TILE, py = (ty-camY)*TILE; // pier entrance tile
       if(px<-TILE*2 || py<-TILE*2 || px>VIEW_COLS*TILE+TILE || py>VIEW_ROWS*TILE+TILE) continue;
       ctx.lineWidth = 2; ctx.strokeStyle = '#6b4a2a';
