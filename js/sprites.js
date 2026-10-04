@@ -113,6 +113,26 @@
   ];
   const CORN_PALETTE = { C:'#f0c14e', G:'#5fa85f', L:'#3f8f3f' };
 
+  const CARROT_SPRITE = [
+    "................",
+    ".......LL.......",
+    "..LL...GG...LL..",
+    "...GL.LGGL.LG...",
+    "....G..GG..G....",
+    ".....GLGGLG.....",
+    "......GGGG......",
+    "....HHOOOODD....",
+    "....HHOOOODD....",
+    ".....HRRRRD.....",
+    ".....HHOODD.....",
+    "......RHDR......",
+    "......HHDD......",
+    ".......OO.......",
+    ".......OO.......",
+    "................",
+  ];
+  const CARROT_PALETTE = { G:'#3f9a3f', L:'#7bd06b', O:'#f08a24', H:'#ffb454', D:'#c9680f', R:'#a8540a' };
+
   const SEED_SPRITE = [
     "................","................","................","................",
     "................","................","................","................",
@@ -125,6 +145,7 @@
     wheat:  { label:'小麦',       emoji:'🌾', seedCost:5, sellPrice:10, sprite:MATURE_SPRITE,  palette:WHEAT_RIPE_PALETTE },
     tomato: { label:'トマト',     emoji:'🍅', seedCost:8, sellPrice:16, sprite:TOMATO_SPRITE,  palette:TOMATO_PALETTE },
     corn:   { label:'とうもろこし', emoji:'🌽', seedCost:8, sellPrice:15, sprite:CORN_SPRITE,    palette:CORN_PALETTE },
+    carrot: { label:'にんじん',   emoji:'🥕', seedCost:10, sellPrice:22, sprite:CARROT_SPRITE, palette:CARROT_PALETTE },
   };
 
   // Detailed tree sprite (layered canopy over a trunk)
