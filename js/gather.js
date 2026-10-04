@@ -16,10 +16,11 @@
   function treeAction(t){
     const k = K(t[0],t[1]);
     if(state.fruit[k]){
+      const fr = FRUITS[fruitTypeOf(t[0],t[1])];
       const n = 1 + Math.floor(Math.random()*3);
-      state.mikan += n; state.fruit[k] = false;
+      state[fr.key] = (state[fr.key]||0) + n; state.fruit[k] = false;
       addEffect(t[0],t[1],'pick');
-      setMsg(`みかんを${n}個収穫した🍊`);
+      setMsg(`${fr.label}を${n}個収穫した${fr.emoji}`);
     } else {
       const hits = (state.treeHits[k]||0) + 1;
       const need = [3,2,1][state.axeLevel-1] || 1;
