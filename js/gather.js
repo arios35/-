@@ -128,7 +128,7 @@
       return 'till';
     } else if(!t.planted){
       const crop = state.selectedCrop;
-      if(state.seedsByType[crop]<=0) return null;
+      if((state.seedsByType[crop]||0)<=0) return null;
       t.planted = true; t.growth = 0; t.watered = false; t.crop = crop;
       state.seedsByType[crop]--;
       addEffect(wx,wy,'plant');
