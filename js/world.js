@@ -1,4 +1,21 @@
   // World: 0 grass, 1 soil, 2 shop, 3 path, 4 NPC, 5 chicken coop, 6 tree, 7 water
+  // ---- 木のばらまき:シード固定の乱数(毎回同じ世界)+ゆるいかたまり(森と空き地)。式のような格子模様が出ないようにする ----
+  function hash2(x,y,s){
+    let h = Math.imul(x|0, 374761393) ^ Math.imul(y|0, 668265263) ^ Math.imul(s|0, 982451653);
+    h = Math.imul(h ^ (h>>>13), 1274126177); h ^= h>>>16;
+    return (h>>>0)/4294967296;
+  }
+  function vnoise(x,y,s,sc){                                  // 0..1 のなめらかなノイズ
+    const fx = x/sc, fy = y/sc, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx-x0, ty = fy-y0;
+    const sx = tx*tx*(3-2*tx), sy = ty*ty*(3-2*ty);
+    const a = hash2(x0,y0,s), b = hash2(x0+1,y0,s), c = hash2(x0,y0+1,s), d = hash2(x0+1,y0+1,s);
+    const top = a+(b-a)*sx, bot = c+(d-c)*sx;
+    return top+(bot-top)*sy;
+  }
+  function treeRnd(x,y,seed,density){                          // density = 平均の密度。場所によって 0.15倍〜1.85倍 に濃淡がつく
+    const clump = 0.15 + 1.7*vnoise(x,y,seed,5);
+    return hash2(x,y,seed+7) < Math.min(0.34, density*clump);
+  }
   const layout = [];
   for(let y=0;y<ROWS;y++){ const row=[]; for(let x=0;x<COLS;x++) row.push('0'); layout.push(row); }
   function fillRect(x0,y0,x1,y1,ch){
@@ -19,7 +36,7 @@
   layout[4][13]='4';                 // NPC
   layout[8][16]='5';                 // chicken coop
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
-    if(layout[y][x]==='0' && (x*7+y*13)%23===0) layout[y][x]='6'; // scattered trees
+    if(layout[y][x]==='0' && treeRnd(x,y,11,0.05) && !(x>=19 && x<=25 && y>=1 && y<=15)) layout[y][x]='6'; // scattered trees(牛・羊の牧場まわりは、アクションが世話に取られて木に届かなくなるので避ける)
   }
   // Rocks: scattered plus a rocky quarry area
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
@@ -61,6 +78,7 @@
     layout[y][x] = (x===19||x===24||y===10||y===15) ? '8' : '0';
   }
   layout[10][21]='j';                // sheep pasture gate
+  clearAround(layout,21,7,21,7,1); clearAround(layout,21,10,21,10,1);   // 牧場の入口に木が生えてふさがないように
   // Toll gate (500G) set between the border trees
   layout[1][26]='G'; layout[1][27]='G';
   // Bottom-left passage to the river area (2000G gate between the border trees)
@@ -90,9 +108,9 @@
   NORTH[19][22]='d'; NORTH[19][23]='e'; NORTH[19][24]='f';  // material shop: walls + door
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
     if(NORTH[y][x]!=='0') continue;
-    if(x<=12 && y<=11 && (x*5+y*7)%4===0) NORTH[y][x]='6';        // dense forest (west)
+    if(x<=12 && y<=11 && treeRnd(x,y,23,0.26)) NORTH[y][x]='6';        // dense forest (west)
     else if(x>=24 && y>=3 && y<=12 && (x+y*2)%3===0) NORTH[y][x]='g'; // rich quarry (east)
-    else if((x*7+y*13)%11===0) NORTH[y][x]='6';
+    else if(treeRnd(x,y,29,0.10)) NORTH[y][x]='6';
     else if((x*5+y*11)%17===0) NORTH[y][x]='g';
   }
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
@@ -118,7 +136,7 @@
   function rfr(x0,y0,x1,y1,ch){ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){ if(RIVER[y] && RIVER[y][x]!==undefined) RIVER[y][x]=ch; } }
   const rput = (x,y,ch)=>{ RIVER[y][x] = ch; };
   for(let y=0;y<RROWS;y++) for(let x=0;x<RCOLS;x++){
-    if((x*7+y*13)%9===0) RIVER[y][x]='6';
+    if(treeRnd(x,y,37,0.11)) RIVER[y][x]='6';
     else if((x*5+y*11)%23===0) RIVER[y][x]='g';
     else if((x*11+y*3)%13===0) RIVER[y][x]='P';                 // wild mushrooms
   }
@@ -175,18 +193,26 @@
   for(let y=0;y<CROWS;y++){ const row=[]; for(let x=0;x<CCOLS;x++) row.push('0'); COAST.push(row); }
   function cfr(x0,y0,x1,y1,ch){ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){ if(COAST[y] && COAST[y][x]!==undefined) COAST[y][x]=ch; } }
   const cput = (x,y,ch)=>{ COAST[y][x] = ch; };
-  const wSea = y => 4 + Math.round(1.3*Math.sin(y*0.55));              // west shoreline: x <= this is sea
+  const wSea = y => 5 + Math.round(1.3*Math.sin(y*0.55));              // west shoreline: x <= this is sea
   const sSea = x => CROWS-6 + Math.round(1.3*Math.sin(x*0.45+1));      // south shoreline: y >= this is sea
   for(let y=0;y<CROWS;y++) for(let x=0;x<CCOLS;x++){
     if(x<=wSea(y) || y>=sSea(x)) COAST[y][x]='7';                      // sea
     else if(x<=wSea(y)+3 || y>=sSea(x)-3) COAST[y][x]='t';            // sand beach
-    else if((x*7+y*13)%11===0) COAST[y][x]='6';
+    else if(treeRnd(x,y,53,0.15)) COAST[y][x]='6';
     else if((x*5+y*11)%23===0) COAST[y][x]='g';
     else if((x*11+y*3)%17===0) COAST[y][x]='P';                        // wild mushrooms
   }
   for(let y=0;y<CROWS;y++) for(let x=0;x<CCOLS;x++){
     if((x>=CCOLS-2 || y<2) && COAST[y][x]!=='7') COAST[y][x]='9';     // north / east: unbreakable forest
   }
+  // 大規模な畑(土のマスなので、アクションで耕して種まき・水やり・収穫ができる)
+  cfr(24,2,36,9,'1');                        // 東の大きな畑 13x8
+  cfr(11,3,18,9,'1');                        // 北西の畑 8x7
+  cfr(30,14,36,19,'1');                      // 南東の畑 7x6
+  // 西の桟橋(海へ向かってまっすぐ。岸側のいちばん端に釣り竿の目印を立てる)
+  const PIER_Y = 14;
+  for(let x=1;x<=wSea(PIER_Y);x++) COAST[PIER_Y][x]='F';
+  const COAST_FISH_SPOTS = [[wSea(PIER_Y), PIER_Y]];
   cfr(20,1,21,13,'3');                       // road from the gate down to the village green
   cfr(12,12,28,13,'3');                      // east-west street
   cfr(12,12,13,19,'3');                      // road toward the west beach
