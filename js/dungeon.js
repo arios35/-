@@ -3,6 +3,7 @@
   function updateMapName(){
     document.getElementById('mapName').textContent = (MAP_NAMES[state.map] || '') + (state.map==='dungeon' ? ` 地下${state.floor||1}階` : '');
     document.getElementById('btnReturn').style.display = state.map==='dungeon' ? '' : 'none';
+    resizeCanvas();                                                    // 帰還ボタンの出し入れで、画面の高さを合わせ直す
   }
 
   // ---- Dungeon: 15 floors, enemies, bosses, sword, life ----
