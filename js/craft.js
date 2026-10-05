@@ -57,7 +57,7 @@
     state.wood -= c.wood; state.stone -= c.stone; state.iron -= c.iron;
     state.sword = true; state.swordLevel = 1;
     updateHud(); save();
-    renderCraft('剣を作った!ダンジョンでアクションを押すと振れるよ⚔️');
+    renderCraft('剣を作った!ダンジョンで画面をタップすると振れるよ⚔️');
   }
   const SWORD_UP = [null,
     { wood:10, stone:15, iron:8 },                      // Lv1 -> 2
