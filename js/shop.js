@@ -100,7 +100,6 @@
     save();
   };
   document.getElementById('closeShop').onclick = closeShop;
-  document.getElementById('btnAction').addEventListener('pointerdown', (e)=>{ e.preventDefault(); action(); });
 
   // ---- 南の海岸の作物屋(作物だけを扱う店。小麦とトマトの種は置いていない) ----
   const CROP_SHOP_SEEDS = ['corn','carrot'];
