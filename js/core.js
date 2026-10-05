@@ -1,4 +1,12 @@
   document.addEventListener('gesturestart', (e)=>e.preventDefault());
+  // Safariの「ダブルタップで拡大」を止める(CSSの touch-action でも止めているが、念のため)。ボタン・メニューは素早い連打ができるよう対象外
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', (e)=>{
+    const now = Date.now();
+    const onUi = e.target && e.target.closest && e.target.closest('button, .seed, .shop');
+    if(now - lastTouchEnd <= 350 && !onUi) e.preventDefault();
+    lastTouchEnd = now;
+  }, { passive:false });
   document.addEventListener('selectstart', (e)=>e.preventDefault());     // no text selection / copy popup on long-press
   document.addEventListener('contextmenu', (e)=>e.preventDefault());   // iOS pinch zoom only (no tap swallowing)
 
@@ -21,7 +29,10 @@
       ts = Math.min(availW/12, availH/8, 48);
     } else {
       availW = Math.min(document.documentElement.clientWidth - 16, 760) - 6;
-      availH = window.innerHeight - top - 140;
+      const retBtn = document.getElementById('btnReturn');
+      const retH = (retBtn && retBtn.style.display !== 'none') ? 66 : 0;                 // ダンジョンで「帰還」ボタンが出ている間だけ、そのぶん空ける
+      const safeB = (typeof getComputedStyle === 'function' ? parseFloat(getComputedStyle(document.documentElement).paddingBottom) : 0) || 0;
+      availH = window.innerHeight - top - (84 + retH + safeB);                            // 84 = メッセージ欄(2行)+余白。アクションボタンがなくなったぶん、画面が広い
       ts = Math.min(availW/11, 48);
     }
     ts = Math.max(ts, 24);
