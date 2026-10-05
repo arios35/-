@@ -4,13 +4,17 @@
   const keyVec = { up:false, down:false, left:false, right:false };
   const drag = { active:false, id:null, sx:0, sy:0, kx:0, ky:0, moved:false };
   (function setupDrag(){
-    const RADIUS = 55, DEADZONE = 10;
+    const RADIUS = 55, DEADZONE = 10, TAP_MAX_MS = 450, TAP_MAX_MOVE = 14;   // 450ms以内・ほぼ動かさずに離したらタップ
     let downTime = 0, maxDist = 0, sx = 0, sy = 0;
     function scaleK(){ const r = canvas.getBoundingClientRect(); return { r, k: displayW / r.width }; }
 
+    function endDrag(){ drag.active = false; drag.moved = false; stickVec.x = 0; stickVec.y = 0; }
     function onDown(e){
-      if(drag.active) return;
       e.preventDefault();
+      if(drag.active){
+        if(e.isPrimary === false){ action(); return; }      // 動かしている最中に、もう1本の指で触れた:その場でアクション(動きながら攻撃・作業できる)
+        endDrag();                                           // 最初の指が新しく来た=前の指の「離した」を取りこぼしていたので、リセットしてやり直す
+      }
       const {r, k} = scaleK();
       drag.active = true; drag.id = e.pointerId; drag.moved = false;
       sx = e.clientX; sy = e.clientY;
@@ -34,15 +38,14 @@
     }
     function onUp(e){
       if(!drag.active || e.pointerId !== drag.id) return;
-      drag.active = false; drag.moved = false;
-      stickVec.x = 0; stickVec.y = 0;
-      // Quick tap without dragging = action
-      if(performance.now() - downTime < 300 && maxDist < 14){ action(); }
+      endDrag();
+      // 画面をさっとタップ(ドラッグなし)= アクション
+      if(performance.now() - downTime < TAP_MAX_MS && maxDist < TAP_MAX_MOVE){ action(); }
     }
     canvas.addEventListener('pointerdown', onDown);
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerup', onUp);
-    canvas.addEventListener('pointercancel', onUp);
+    canvas.addEventListener('pointercancel', (e)=>{ if(drag.active && e.pointerId === drag.id) endDrag(); });   // キャンセルされたときは、アクションを出さない
   })();
 
   function drawDragGuide(){
