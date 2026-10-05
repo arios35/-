@@ -1,3 +1,5 @@
+  // 古い index.html が残っていても、廃止したアクションボタン(画面タップに統合済み)が出ないようにする
+  { const oldBtn = document.getElementById('btnAction'); if(oldBtn && typeof oldBtn.remove === 'function') oldBtn.remove(); }
   document.addEventListener('gesturestart', (e)=>e.preventDefault());
   // Safariの「ダブルタップで拡大」を止める(CSSの touch-action でも止めているが、念のため)。ボタン・メニューは素早い連打ができるよう対象外
   let lastTouchEnd = 0;
