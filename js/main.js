@@ -34,7 +34,7 @@
     updateMapName();
     effects = []; actionAnim = null; fishing.phase = 'idle';
     fadeStart = performance.now();
-    setMsg(name==='dungeon' ? `🪜 地下${state.floor||1}階に来た!敵を倒して進もう(アクションで剣を振る)`
+    setMsg(name==='dungeon' ? `🪜 地下${state.floor||1}階に来た!敵を倒して進もう(タップで剣を振る。動きながら別の指でタップもOK)`
          : name==='cave' ? '🕳️ 洞窟に来た!暗いけど、岩から鉄がよく出るみたい'
          : name==='north' ? '⛰️ 北の山に来た!岩が鉄を含みやすいみたい'
          : name==='coast' ? '🏖️ 南の海岸に来た!潮風が気持ちいい'
