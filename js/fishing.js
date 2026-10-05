@@ -32,7 +32,7 @@
       const tg = fishTarget();
       if(!tg){ setMsg('水面が近くにないよ'); return; }
       fishing.phase = 'wait'; fishing.t = Math.max(0.8, 1.5 - 0.3*((state.rodLevel||1)-1) + Math.random()*3); fishing.bx = tg[0]; fishing.by = tg[1];
-      setMsg('釣り糸をたらした…🎣 「❗」が出たらアクション!');
+      setMsg('釣り糸をたらした…🎣 「❗」が出たらタップ!');
     } else if(fishing.phase==='wait'){
       fishing.phase = 'idle';
       setMsg('早すぎた!逃げられちゃった');
@@ -50,7 +50,7 @@
     if(tileAt(tileX(),tileY())!=='F'){ fishing.phase = 'idle'; return; }
     fishing.t -= dt;
     if(fishing.t<=0){
-      if(fishing.phase==='wait'){ fishing.phase = 'bite'; fishing.t = 1.1 + 0.25*((state.rodLevel||1)-1); setMsg('❗ 引いてる!今すぐアクション!'); }
+      if(fishing.phase==='wait'){ fishing.phase = 'bite'; fishing.t = 1.1 + 0.25*((state.rodLevel||1)-1); setMsg('❗ 引いてる!今すぐタップ!'); }
       else { fishing.phase = 'idle'; setMsg('逃げられた…'); }
     }
   }
