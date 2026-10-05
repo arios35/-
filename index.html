@@ -22,7 +22,7 @@
     --bg:#20241c; --panel:#2b2a20; --ink:#eee6d3; --sub:#b8ad92;
   }
   html{scroll-padding-top:env(safe-area-inset-top,0px); height:100%;}
-  *{box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent;}
+  *{box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent; touch-action:manipulation;}   /* manipulation = ダブルタップ拡大なし(キャンバスは下で none) */
   body{
     margin:0; height:100%; background:var(--bg); color:var(--ink);
     font-family:'Courier New', ui-monospace, monospace;
@@ -70,7 +70,6 @@
   .big-btn{
     flex:1; font-size:1rem; padding:16px 8px; font-weight:bold; border-radius:12px;
   }
-  #btnAction{ background:var(--accent2); color:#fff; border-color:var(--accent2); }
   #btnSleep, #btnReturn{ background:#5b6fa8; color:#fff; border-color:#5b6fa8; }
   .shop{
     position:fixed; inset:0; background:rgba(0,0,0,0.5);
@@ -117,7 +116,7 @@
 </head>
 <body>
   <h1>🌾 のんびり農場</h1>
-  <p class="sub">画面をドラッグで移動(矢印/WASDも可)・タップかアクションボタンで畑仕事/会話/お世話</p>
+  <p class="sub">ドラッグで移動・タップで畑仕事/会話/お世話(矢印/WASD/スペースも可)</p>
   <div class="map-name" id="mapName"></div>
 
   <div class="wrap">
@@ -144,10 +143,9 @@
       <canvas id="game" width="360" height="280"></canvas>
     </div>
     <div class="right-col">
-      <div class="msg" id="msg">畑まで歩いて「アクション」を押してみて</div>
+      <div class="msg" id="msg">畑まで歩いて、画面をタップしてみて</div>
       <div class="controls">
         <div class="big-row">
-          <button class="big-btn" id="btnAction">⚡ アクション</button>
           <button class="big-btn" id="btnReturn" style="display:none">🔙 帰還 500G</button>
         </div>
       </div>
@@ -336,24 +334,24 @@
   </div>
 
 <!-- 読み込み順を変えないこと(上から順に実行される) -->
-<script src="js/core.js?v=7"></script>
-<script src="js/world.js?v=7"></script>
-<script src="js/dungeon-gen.js?v=7"></script>
-<script src="js/state.js?v=7"></script>
-<script src="js/sprites.js?v=7"></script>
-<script src="js/interact.js?v=7"></script>
-<script src="js/buildings.js?v=7"></script>
-<script src="js/craft.js?v=7"></script>
-<script src="js/wells.js?v=7"></script>
-<script src="js/fishing.js?v=7"></script>
-<script src="js/dungeon.js?v=7"></script>
-<script src="js/boss.js?v=7"></script>
-<script src="js/combat.js?v=7"></script>
-<script src="js/dungeon-draw.js?v=7"></script>
-<script src="js/gather.js?v=7"></script>
-<script src="js/shop.js?v=7"></script>
-<script src="js/input.js?v=7"></script>
-<script src="js/render.js?v=7"></script>
-<script src="js/main.js?v=7"></script>
+<script src="js/core.js?v=9"></script>
+<script src="js/world.js?v=9"></script>
+<script src="js/dungeon-gen.js?v=9"></script>
+<script src="js/state.js?v=9"></script>
+<script src="js/sprites.js?v=9"></script>
+<script src="js/interact.js?v=9"></script>
+<script src="js/buildings.js?v=9"></script>
+<script src="js/craft.js?v=9"></script>
+<script src="js/wells.js?v=9"></script>
+<script src="js/fishing.js?v=9"></script>
+<script src="js/dungeon.js?v=9"></script>
+<script src="js/boss.js?v=9"></script>
+<script src="js/combat.js?v=9"></script>
+<script src="js/dungeon-draw.js?v=9"></script>
+<script src="js/gather.js?v=9"></script>
+<script src="js/shop.js?v=9"></script>
+<script src="js/input.js?v=9"></script>
+<script src="js/render.js?v=9"></script>
+<script src="js/main.js?v=9"></script>
 </body>
 </html>
