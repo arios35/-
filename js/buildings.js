@@ -205,7 +205,7 @@
     state[S.flag] = true;
     document.getElementById('siteModal').classList.remove('open');
     updateHud(); save();
-    setMsg('🏠 家が完成した!家でアクションすると1日を過ごせるよ');
+    setMsg('🏠 家が完成した!家のそばでタップすると1日を過ごせるよ');
   };
 
   const DAY_SEC = 120;   // one in-game day = 2 real minutes
