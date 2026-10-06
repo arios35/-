@@ -108,6 +108,12 @@
       ctx.fillRect(px+4*u, py+6*u, 4*u, 2*u); ctx.fillRect(px+4*u, py+10*u, 4*u, 2*u);
     } else if(t==='G'||t==='Z'||t==='T'||t==='J'){
       ctx.fillStyle = '#e8dcae'; ctx.fillRect(px,py,TILE,TILE);
+    } else if(t==='='){
+      drawStoneGround(px,py,wx,wy);
+    } else if(t==='w'){
+      drawDeckGround(px,py,wx,wy);
+    } else if(t==='#'){
+      ctx.fillStyle = GROUND; ctx.fillRect(px,py,TILE,TILE);
     } else if(t==='t'){                                  // sand beach, with foam where it meets the sea
       ctx.fillStyle = '#efdca0'; ctx.fillRect(px,py,TILE,TILE);
       speckle(px,py,wx,wy,6,'rgba(160,120,60,0.18)',1,2);
@@ -118,7 +124,7 @@
       if(tileAt(wx+1,wy)==='7') ctx.fillRect(px+TILE-3, py, 3, TILE);
       if(tileAt(wx,wy-1)==='7') ctx.fillRect(px, py, TILE, 3);
       if(tileAt(wx,wy+1)==='7') ctx.fillRect(px, py+TILE-3, TILE, 3);
-    } else if(t==='3'||t==='u'||t==='v'||t==='U'||t==='V'||t==='X'||t==='Q'||t==='I'||t==='z'){
+    } else if(t==='3'||t==='u'||t==='v'||t==='U'||t==='V'||t==='X'||t==='Q'||t==='I'||t==='z'||t==='<'||t==='>'){
       ctx.fillStyle = '#e8dcae';
       ctx.fillRect(px,py,TILE,TILE);
       ctx.fillStyle = 'rgba(0,0,0,0.07)';
@@ -234,12 +240,21 @@
       ctx.fillStyle = GROUND;
       ctx.fillRect(px,py,TILE,TILE);
     } else if(t==='7'){
-      ctx.fillStyle = state.map==='coast' ? '#4f93cf' : '#6ea8d8';
+      ctx.fillStyle = (state.map==='coast' || state.map==='port') ? '#4f93cf' : '#6ea8d8';
       ctx.fillRect(px,py,TILE,TILE);
       ctx.strokeStyle = 'rgba(255,255,255,0.35)';
       const wt = performance.now()/900;
       const oy = ((Math.sin(wt+wx*0.9+wy*0.7)+1)/2)*(TILE-8)+4;
       ctx.beginPath(); ctx.moveTo(px+4,py+oy); ctx.lineTo(px+TILE-4,py+oy); ctx.stroke();
+      if(state.map==='port'){                          // 岸壁・桟橋のまわりの白い波、沖は少し濃い青
+        const landc = (dx,dy)=>{ const c = tileAt(wx+dx,wy+dy); return c==='=' || c==='w'; };
+        ctx.fillStyle = `rgba(255,255,255,${0.4+0.3*Math.sin(performance.now()/450 + wx*0.7 + wy)})`;
+        if(landc(0,-1)) ctx.fillRect(px, py, TILE, 3);
+        if(landc(-1,0)) ctx.fillRect(px, py, 3, TILE);
+        if(landc(1,0)) ctx.fillRect(px+TILE-3, py, 3, TILE);
+        if(landc(0,1)) ctx.fillRect(px, py+TILE-3, TILE, 3);
+        if(wy>=36){ ctx.fillStyle = 'rgba(0,40,90,0.12)'; ctx.fillRect(px,py,TILE,TILE); }
+      }
       if(state.map==='river' && (wx*7+wy*3)%13===0){   // lily pads
         ctx.fillStyle = '#4f9a55'; ctx.beginPath(); ctx.ellipse(px+TILE/2, py+TILE/2, 8, 5, 0, 0, Math.PI*2); ctx.fill();
         ctx.fillStyle = '#6ea8d8'; ctx.fillRect(px+TILE/2, py+TILE/2-1, 9, 2);
@@ -380,7 +395,7 @@
   function addEffect(wx,wy,type,color){ effects.push({wx,wy,type,color,start:performance.now()}); }
 
   function draw(){
-    GROUND = state.map==='coast' ? '#b3d98c' : state.map==='dungeon' ? DUNGEON_GROUND[floorTier(state.floor||1)] : state.map==='cave' ? '#6f6b76' : state.map==='north' ? '#8fbf86' : state.map==='river' ? '#9fcf97' : '#a9c96e';
+    GROUND = state.map==='port' ? '#a9cf86' : state.map==='coast' ? '#b3d98c' : state.map==='dungeon' ? DUNGEON_GROUND[floorTier(state.floor||1)] : state.map==='cave' ? '#6f6b76' : state.map==='north' ? '#8fbf86' : state.map==='river' ? '#9fcf97' : '#a9c96e';
     const {camX, camY} = camera();
     ctx.fillStyle = GROUND;                                   // never leave old frames showing
     ctx.fillRect(0, 0, VIEW_COLS*TILE + TILE, VIEW_ROWS*TILE + TILE);
@@ -394,7 +409,7 @@
         const tt = tileAt(wx,wy);
         if(tt==='6'||tt==='9') trees.push([sx,sy,wx,wy,tt]);
         if(tt==='M' && tileAt(wx,wy+1)!=='M') mts.push([sx,sy,wx]);
-        if(tt==='G'||tt==='Z'||tt==='T'||tt==='u'||tt==='v'||tt==='U'||tt==='V'||tt==='X'||tt==='Q'||tt==='J'||tt==='I'||tt==='z') overlays.push([sx,sy,wx,tt]);
+        if(tt==='G'||tt==='Z'||tt==='T'||tt==='u'||tt==='v'||tt==='U'||tt==='V'||tt==='X'||tt==='Q'||tt==='J'||tt==='I'||tt==='z'||tt==='<'||tt==='>') overlays.push([sx,sy,wx,tt]);
         drawTile(wx, wy, sx/TILE, sy/TILE);
       }
     }
@@ -402,6 +417,7 @@
       for(const c of state.sheep) drawSheep((c.x-camX)*TILE, (c.y-camY)*TILE, c.face||1, !c.fed && !c.woolReady, !!c.woolReady);
       for(const c of state.cows) drawCow((c.x-camX)*TILE, (c.y-camY)*TILE, c.face||1, !c.fed && !c.milkReady, !!c.milkReady);
     }
+    if(state.map==='port') drawPortLayer(camX, camY);
     for(const [msx,msy,mwx] of mts) drawMountainSlice(msx,msy,mwx);
     // Trees drawn bigger than their tile, overflowing into neighbors, on top of the base grid
     const tScale = (TILE/16)*2.6;
@@ -432,7 +448,9 @@
       } else {
         ctx.fillStyle = '#e0a030';
         ctx.beginPath();
-        if(ot==='u'||ot==='V'||ot==='X'||ot==='z'){ ctx.moveTo(ox+TILE/2,oy+6); ctx.lineTo(ox+TILE-7,oy+TILE-7); ctx.lineTo(ox+7,oy+TILE-7); }
+        if(ot==='>'){ ctx.moveTo(ox+TILE-6,oy+TILE/2); ctx.lineTo(ox+7,oy+7); ctx.lineTo(ox+7,oy+TILE-7); }
+        else if(ot==='<'){ ctx.moveTo(ox+6,oy+TILE/2); ctx.lineTo(ox+TILE-7,oy+7); ctx.lineTo(ox+TILE-7,oy+TILE-7); }
+        else if(ot==='u'||ot==='V'||ot==='X'||ot==='z'){ ctx.moveTo(ox+TILE/2,oy+6); ctx.lineTo(ox+TILE-7,oy+TILE-7); ctx.lineTo(ox+7,oy+TILE-7); }
         else { ctx.moveTo(ox+TILE/2,oy+TILE-6); ctx.lineTo(ox+TILE-7,oy+7); ctx.lineTo(ox+7,oy+7); }
         ctx.fill();
       }
@@ -471,6 +489,7 @@
       ctx.globalAlpha = 1;
     }
     if(state.map==='dungeon'){ drawBossGround(camX, camY); drawEnemies(camX, camY); drawWaves(camX, camY); drawBossShots(camX, camY); }
+    if(state.map==='port') drawPortPeople(camX, camY);
     drawFishingSpot(camX, camY);
     drawPlayer(camX, camY);
     drawFishing(camX, camY);
