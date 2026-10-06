@@ -1,12 +1,13 @@
-  const MAP_LAYOUTS = { home:HOME, north:NORTH, river:RIVER, cave:CAVE, dungeon:DUNGEON, coast:COAST };
+  const MAP_LAYOUTS = { home:HOME, north:NORTH, river:RIVER, cave:CAVE, dungeon:DUNGEON, coast:COAST, port:PORT };
   function setMapSize(name){
     if(name==='dungeon'){ COLS = DCOLS; ROWS = DROWS; }
     else if(name==='river'){ COLS = RCOLS; ROWS = RROWS; }
     else if(name==='coast'){ COLS = CCOLS; ROWS = CROWS; }
+    else if(name==='port'){ COLS = PCOLS; ROWS = PROWS; }
     else { COLS = 32; ROWS = 24; }
   }
 
-  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','J','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A','D','Y','W','O','k']);
+  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','J','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A','D','Y','W','O','k','#']);
 
   let state = {
     px:6, py:5, dir:'down',
@@ -57,9 +58,9 @@
   }
   function tileX(){ return Math.round(state.px); }
   function tileY(){ return Math.round(state.py); }
-  function K(x,y){ return (state.map==='north' ? 'n:' : state.map==='river' ? 'r:' : state.map==='coast' ? 's:' : state.map==='cave' ? 'c:' : state.map==='dungeon' ? 'd:' : '') + x + ',' + y; }
+  function K(x,y){ return (state.map==='north' ? 'n:' : state.map==='river' ? 'r:' : state.map==='coast' ? 's:' : state.map==='port' ? 'p:' : state.map==='cave' ? 'c:' : state.map==='dungeon' ? 'd:' : '') + x + ',' + y; }
   function key(x,y){ return K(x,y); }
-  function parseKey(k){ const m = k.match(/^(?:(n|r|c|d|s):)?(-?\d+),(-?\d+)$/); return { map: m[1]==='n'?'north':m[1]==='r'?'river':m[1]==='s'?'coast':m[1]==='c'?'cave':m[1]==='d'?'dungeon':'home', x:+m[2], y:+m[3] }; }
+  function parseKey(k){ const m = k.match(/^(?:(n|r|c|d|s|p):)?(-?\d+),(-?\d+)$/); return { map: m[1]==='n'?'north':m[1]==='r'?'river':m[1]==='s'?'coast':m[1]==='p'?'port':m[1]==='c'?'cave':m[1]==='d'?'dungeon':'home', x:+m[2], y:+m[3] }; }
   function farmTile(x,y){
     const k = key(x,y);
     if(!state.tiles[k]) state.tiles[k] = {tilled:false, planted:false, growth:0, watered:false, crop:null};
