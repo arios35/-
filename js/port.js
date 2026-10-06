@@ -19,7 +19,7 @@
   const PORT_SHOPS_S = [['🐟','魚屋'], ['⚓','船具屋'], ['🍺','酒場'], ['🦀','海鮮食堂'], ['🧂','塩屋'], ['🎣','釣具屋'], ['🍤','屋台食堂']];
 
   (function buildPort(){
-    let seed = 770017;                                         // 固定シード:毎回同じ町
+    let seed = 770055;                                         // 固定シード:毎回同じ町
     const rnd = ()=>{ seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
     const pick = a => a[Math.floor(rnd()*a.length)];
 
@@ -59,20 +59,29 @@
     const canPlace = (x,y,w,h,ch)=>{ for(let yy=y; yy<y+h; yy++) for(let xx=x; xx<x+w; xx++) if(!okTile(xx,yy,ch)) return false; return true; };
     let lastPal = -1;
     const nextPal = ()=>{ let p; do{ p = Math.floor(rnd()*8); }while(p===lastPal); lastPal = p; return p; };
+    const decks = new Map();                                                 // 店の種類は、一巡するまで同じものを出さない
+    function takeShop(list){
+      let deck = decks.get(list);
+      if(!deck || !deck.length){
+        deck = list.slice();
+        for(let i=deck.length-1;i>0;i--){ const j = Math.floor(rnd()*(i+1)); const t = deck[i]; deck[i] = deck[j]; deck[j] = t; }
+        decks.set(list,deck);
+      }
+      return deck.pop();
+    }
     function fillSegment(x0,x1,bottom,topLimit,mix,shops){
       let x = x0;
-      while(x1 - x + 1 >= 3){
-        let w = 3 + Math.floor(rnd()*3);                                     // 幅 3〜5
-        if(x + w - 1 > x1) w = x1 - x + 1;
-        const rem = x1 - (x + w - 1);
-        if(rem > 0 && rem < 3){ if(w + rem <= 7) w += rem; else w -= (3 - rem); }
-        const h = Math.min(bottom - topLimit + 1, 3 + Math.floor(rnd()*4));  // 高さ 3〜6
+      while(x1 - x + 1 >= 2){
         const r = rnd();
         let type = r < mix.house ? 'house' : r < mix.house + mix.shop ? 'shop' : 'warehouse';
+        let w = type==='warehouse' ? 4 + Math.floor(rnd()*2) : 2 + Math.floor(rnd()*3);   // 幅 2〜4(細い家も混ぜて、びっしり並べる)。倉庫は 4〜5
+        if(x + w - 1 > x1) w = x1 - x + 1;
+        if(x1 - (x + w - 1) === 1) w += 1;                                   // 1マスだけ余らせない
         if(type==='warehouse' && w<4) type = 'shop';
+        const h = Math.min(bottom - topLimit + 1, 3 + Math.floor(rnd()*4));  // 高さ 3〜6
         const o = { type, x, y:bottom-h+1, w, h, pal: type==='warehouse' ? 8 : nextPal(), awn:Math.floor(rnd()*AWNINGS.length),
-                    door: w<=3 ? 1 : 1 + Math.floor(rnd()*(w-2)), chimney: rnd()<0.6 };
-        if(type==='shop'){ const s = pick(shops); o.emoji = s[0]; o.name = s[1]; }
+                    door: w===2 ? Math.floor(rnd()*2) : w===3 ? 1 : 1 + Math.floor(rnd()*(w-2)), chimney: rnd()<0.6 };
+        if(type==='shop'){ const s = takeShop(shops); o.emoji = s[0]; o.name = s[1]; }
         else if(type==='warehouse'){ o.emoji = '📦'; o.name = '倉庫'; }
         else o.name = '民家';
         addBuilding(o);
@@ -80,7 +89,7 @@
         x += w + (rnd()<0.22 ? 1 : 0);
       }
     }
-    const mixN = { house:0.85, shop:0.15 }, mixM = { house:0.45, shop:0.55 }, mixS = { house:0.25, shop:0.45 };
+    const mixN = { house:0.85, shop:0.15 }, mixM = { house:0.45, shop:0.55 }, mixS = { house:0.25, shop:0.47 };
     addBuilding({ type:'hall', x:24, y:2, w:8, h:6, pal:9, door:3, name:'役場', emoji:'🏛️', awn:0, chimney:false });     // 通りの突きあたりの役場
     fillSegment(3,23,7,2,mixN,PORT_SHOPS_N); fillSegment(32,52,7,2,mixN,PORT_SHOPS_N);                                    // 北の並び
     fillSegment(3,13,16,10,mixM,PORT_SHOPS_M);
@@ -163,10 +172,14 @@
   }
 
   // ---- 建物をタップしたときのひとこと(中には入れない) ----
-  function portNearBuilding(){
-    const tx = tileX(), ty = tileY();
-    for(const b of PORT_BUILDINGS){ if(tx>=b.x-1 && tx<=b.x+b.w && ty>=b.y-1 && ty<=b.y+b.h) return b; }
-    return null;
+  function portNearBuilding(){                                  // 近くの建物のうち、入口がいちばん近いもの
+    const tx = tileX(), ty = tileY(); let best = null, bd = 1e9;
+    for(const b of PORT_BUILDINGS){
+      if(tx<b.x-1 || tx>b.x+b.w || ty<b.y-1 || ty>b.y+b.h) continue;
+      const d = Math.hypot((b.x+b.door+0.5)-(state.px+0.5), (b.y+b.h-0.5)-(state.py+0.5));
+      if(d<bd){ bd = d; best = b; }
+    }
+    return best;
   }
   const PORT_HOUSE_LINES = ['ドアには鍵がかかっているみたい', '中から楽しそうな声が聞こえる…', '今日はお休みみたい', '窓から、いい匂いがする…', 'ノックしても返事がない…'];
   function portTapMessage(){
