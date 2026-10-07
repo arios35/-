@@ -106,7 +106,7 @@
       ctx.fillStyle = '#8a4a32';
       ctx.fillRect(px+4*u, py+5*u, 2*u, 8*u);
       ctx.fillRect(px+4*u, py+6*u, 4*u, 2*u); ctx.fillRect(px+4*u, py+10*u, 4*u, 2*u);
-    } else if(t==='G'||t==='Z'||t==='T'||t==='J'){
+    } else if(t==='G'||t==='Z'||t==='T'||t==='J'||t==='$'){
       ctx.fillStyle = '#e8dcae'; ctx.fillRect(px,py,TILE,TILE);
     } else if(t==='='){
       drawStoneGround(px,py,wx,wy);
@@ -409,7 +409,7 @@
         const tt = tileAt(wx,wy);
         if(tt==='6'||tt==='9') trees.push([sx,sy,wx,wy,tt]);
         if(tt==='M' && tileAt(wx,wy+1)!=='M') mts.push([sx,sy,wx]);
-        if(tt==='G'||tt==='Z'||tt==='T'||tt==='u'||tt==='v'||tt==='U'||tt==='V'||tt==='X'||tt==='Q'||tt==='J'||tt==='I'||tt==='z'||tt==='<'||tt==='>') overlays.push([sx,sy,wx,tt]);
+        if(tt==='G'||tt==='Z'||tt==='T'||tt==='u'||tt==='v'||tt==='U'||tt==='V'||tt==='X'||tt==='Q'||tt==='J'||tt==='I'||tt==='z'||tt==='<'||tt==='>'||tt==='$') overlays.push([sx,sy,wx,tt,wy]);
         drawTile(wx, wy, sx/TILE, sy/TILE);
       }
     }
@@ -436,9 +436,16 @@
       if(tt==='6' && state.fruit[K(wx,wy)]) drawTreeFruits(tx0, ty0, tScale, wx, wy);   // 実は別に大きく描く
     }
     // Gate and exit arrows on top of the border trees
-    for(const [ox,oy,owx,ot] of overlays){
+    for(const [ox,oy,owx,ot,owy] of overlays){
       const u = TILE/16;
-      if(ot==='G'||ot==='Z'||ot==='T'||ot==='J'){
+      if(ot==='$'){                                                      // たて長の門(東西に通る道をふさぐ)
+        const top = (owy%2===0);
+        ctx.fillStyle = '#8a5a34';
+        ctx.fillRect(ox+3*u,oy,2*u,TILE); ctx.fillRect(ox+9*u,oy,2*u,TILE);
+        for(let i=1;i<6;i++) ctx.fillRect(ox+2*u,oy+i*TILE/6-u,11*u,2*u);
+        ctx.fillStyle = '#5a3a20'; ctx.fillRect(ox+1*u, top?oy:oy+TILE-3*u, 14*u, 3*u);
+        ctx.fillStyle = '#e0b030'; ctx.fillRect(ox+6*u, top?oy+TILE-4*u:oy, 4*u, 4*u);
+      } else if(ot==='G'||ot==='Z'||ot==='T'||ot==='J'){
         const left = (owx%2===0);
         ctx.fillStyle = '#8a5a34';
         ctx.fillRect(ox,oy+3*u,TILE,2*u); ctx.fillRect(ox,oy+9*u,TILE,2*u);
