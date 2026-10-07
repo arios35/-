@@ -1,7 +1,6 @@
   function findNear(ch){
     const tx = tileX(), ty = tileY();
-    const fx = state.dir==='left'?-1:state.dir==='right'?1:0;
-    const fy = state.dir==='up'?-1:state.dir==='down'?1:0;
+    const [fx, fy] = dirVec(state.dir);
     const cx = state.px+0.5, cy = state.py+0.5;
     let best = null, bd = 1e9;
     for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
