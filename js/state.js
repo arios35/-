@@ -7,7 +7,7 @@
     else { COLS = 32; ROWS = 24; }
   }
 
-  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','J','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A','D','Y','W','O','k','#']);
+  const SOLID = new Set(['2','4','5','6','7','8','9','g','h','i','G','Z','J','$','l','m','n','o','p','q','r','R','x','s','S','y','a','b','c','d','e','f','T','N','M','A','D','Y','W','O','k','#']);
 
   let state = {
     px:6, py:5, dir:'down',
@@ -15,7 +15,7 @@
     selectedCrop:'wheat', eggs:0, toolLevel:1,
     wood:0, mikan:0, treeHits:{}, chopped:{}, fruit:null,
     stone:0, iron:0, goldOre:0, rockHits:{}, mined:{}, axeLevel:1, pickLevel:1, map:'home',
-    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, sword:false, wells:{home:false,north:false,river:false,cave:false,coast:false}, wellsOpen:false, enchant:{knock:0,wave:0,fire:0}, swordLevel:1, floor:1, bossDone:{}, bossBeaten:{}, mushroom:0, rodLevel:1, opened:{}, hp:10, stairsOpen:false, dayTime:0, chest:{counts:{}}, northHouse:false, coastHouse:false, totalHarvest:0, gate2Open:false, gate4Open:false, gate3Open:false,
+    gateOpen:false, cows:[], milk:0, sheep:[], wool:0, sword:false, wells:{home:false,north:false,river:false,cave:false,coast:false}, wellsOpen:false, enchant:{knock:0,wave:0,fire:0}, swordLevel:1, floor:1, bossDone:{}, bossBeaten:{}, mushroom:0, rodLevel:1, opened:{}, hp:10, stairsOpen:false, dayTime:0, chest:{counts:{}}, northHouse:false, coastHouse:false, totalHarvest:0, gate2Open:false, gate4Open:false, gate5Open:false, gate3Open:false,
     fish:{ minnow:0, ayu:0, carp:0, yamame:0, catfish:0 },
     chicken:{ fed:false, eggReady:false },
     tiles:{} // "x,y" -> {tilled, planted, growth, watered}
@@ -51,6 +51,7 @@
     if(c==='Z' && state.gate2Open) return '3';
     if(c==='T' && state.gate3Open) return '3';
     if(c==='J' && state.gate4Open) return '3';
+    if(c==='$' && state.gate5Open) return '3';
     if(c==='D' && state.stairsOpen) return 'H';
     const built = state.map==='north' ? state.northHouse : state.map==='coast' ? state.coastHouse : false;   // 建設予定地は、そのマップの家が建ったときだけ家になる
     if(built){ const hm = HOUSE_MAP[c]; if(hm) return hm; }
@@ -111,7 +112,7 @@
   }
 
   const WORK_CHARS = new Set(['h','i']);
-  const GATE_CHARS = new Set(['G','Z','T','D','J']);
+  const GATE_CHARS = new Set(['G','Z','T','D','J','$']);
   const HOUSE_CHARS = new Set(['l','m','n','o','p','q']);
   const SITE_CHARS = new Set(['r','R','x','s','S','y']);
   const HOUSE_MAP = { r:'l', R:'m', x:'n', s:'o', S:'p', y:'q' };
