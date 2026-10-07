@@ -218,6 +218,7 @@
   cfr(12,12,13,19,'3');                      // road toward the west beach
   cfr(27,12,28,19,'3');                      // road toward the south-east beach
   cfr(29,12,38,13,'3');                      // 東の道:港町へ
+  COAST[12][38]='$'; COAST[13][38]='$';      // 港町への門(10000G。東向きに通るので、たて長の門)
   COAST[12][39]='>'; COAST[13][39]='>';      // 港町への出口(右向きの矢印)
   COAST[0][20]='z'; COAST[0][21]='z';        // back to the river area
   cput(23,6,'4');                            // villager
