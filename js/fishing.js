@@ -9,8 +9,7 @@
   const fishing = { phase:'idle', t:0, bx:0, by:0 };
   function fishCount(){ return Object.values(state.fish).reduce((a,b)=>a+b,0); }
   function fishTarget(){
-    const fdx = state.dir==='left'?-1:state.dir==='right'?1:0;
-    const fdy = state.dir==='up'?-1:state.dir==='down'?1:0;
+    const [fdx, fdy] = dirVec(state.dir);
     const dirs = [[1,0],[-1,0],[0,1],[0,-1]].sort((a,b)=>(b[0]*fdx+b[1]*fdy)-(a[0]*fdx+a[1]*fdy));
     const tx = tileX(), ty = tileY();
     for(const [dx,dy] of dirs) for(let d=1;d<=3;d++){
