@@ -12,7 +12,7 @@
     if(nearType('O')){ openEnchant(); return; }
     const wk = findNear('k'), gd = findNear('D');
     if(wk && !(gd && gd[2] < wk[2])){ openWell(); return; }   // next to both the well and the locked stairs: the nearer one
-    if(nearAny(GATE_CHARS)){ openGate(['G','Z','T','D','J'].find(c=>findNear(c))); return; }
+    if(nearAny(GATE_CHARS)){ openGate(['G','Z','T','D','J','$'].find(c=>findNear(c))); return; }
     if(nearAny(HOUSE_CHARS)){ openSleep(); return; }
     if(nearAny(SITE_CHARS)){ openSite(); return; }
     if(nearAny(WORK_CHARS)){ openCraft(); return; }
@@ -23,7 +23,8 @@
       cands[0][1](cands[0][0]);
       return;
     }
-    setMsg(state.map==='port' ? portTapMessage() : 'ここでは何もできないみたい');
+    if(state.map==='port') return;                                  // 港町:建物などを押しても何も起きない(セリフも出さない)
+    setMsg('ここでは何もできないみたい');
   }
 
   function nearRanch(){
@@ -194,7 +195,7 @@
     '釣った魚は、川の国の釣具屋が高く買い取ってくれるよ',
     '南の広場に作物屋があるよ。にんじんの種はそこでしか売ってないんだ🥕',
     '作物屋の隣は家の建設予定地さ。畑のそばに家があると、すぐ寝られて便利だよ🏠',
-    '東の道をずっと行くと、港町があるよ。船がたくさん停まるんだ⚓'
+    '東の道の突きあたりに門があるよ。その先が港町で、船がたくさん停まるんだ(通行料10000G)⚓'
   ];
   function talkNPC(){
     const m = state.map;
