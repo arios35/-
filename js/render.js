@@ -327,9 +327,11 @@
     ctx.beginPath(); ctx.ellipse(px+TILE/2, py+TILE-3, TILE*0.28, 4, 0, 0, Math.PI*2); ctx.fill();
     const scale = TILE/16;
     let sprite = BOY_FRONT, flip = false;
-    if(state.dir==='up') sprite = BOY_BACK;
-    else if(state.dir==='left'){ sprite = BOY_SIDE; flip = true; }
-    else if(state.dir==='right'){ sprite = BOY_SIDE; flip = false; }
+    const dr = state.dir, isLeft = dr.includes('left');
+    if(dr==='up') sprite = BOY_BACK;
+    else if(dr==='left' || dr==='right'){ sprite = BOY_SIDE; flip = isLeft; }
+    else if(dr==='upleft' || dr==='upright'){ sprite = BOY_DIAG_BACK; flip = isLeft; }
+    else if(dr==='downleft' || dr==='downright'){ sprite = BOY_DIAG_FRONT; flip = isLeft; }
     if(invuln>0 && Math.floor(performance.now()/90)%2===0) ctx.globalAlpha = 0.35;
     drawSprite(px, py+bob, sprite, PLAYER_PALETTE, scale, flip);
     ctx.globalAlpha = 1;
@@ -346,15 +348,16 @@
           if(state.dir==='left'){ hx -= 8; sign = -1; }
           else if(state.dir==='right'){ hx += 8; sign = 1; }
           else if(state.dir==='up'){ hy -= 6; }
-          else{ hy += 6; }
+          else if(state.dir==='down'){ hy += 6; }
+          else { const sx2 = isLeft ? -1 : 1; hx += 6*sx2; hy += dr.includes('up') ? -4 : 4; sign = sx2; }          // ななめ
         } else {
           // overhead: raise the tool up and back, then bring it down hard over the top
           if(p<0.4) swing = 100 + (p/0.4)*65;                              // raise
           else if(p<0.65){ const q = (p-0.4)/0.25; swing = 165 + q*q*170; } // fast downswing
           else swing = 335 + ((p-0.65)/0.35)*15;                           // follow-through
           hy = py + TILE*0.58 + bob;
-          if(state.dir==='left'){ hx = px+TILE/2 - 6; sign = -1; }
-          else if(state.dir==='right'){ hx = px+TILE/2 + 6; }
+          if(isLeft){ hx = px+TILE/2 - 6; sign = -1; }
+          else if(dr.includes('right')){ hx = px+TILE/2 + 6; }
           else { hx = px+TILE/2 + 8; }
         }
         ctx.save();
