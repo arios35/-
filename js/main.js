@@ -6,7 +6,7 @@
   curLayout = MAP_LAYOUTS[state.map] || HOME;
   setMapSize(MAP_LAYOUTS[state.map] ? state.map : 'home');
   if(state.map==='dungeon'){ buildFloor(state.floor||1); spawnEnemies(); }
-  if(state.map==='port') spawnPortPeople();
+  if(state.map==='port'){ state.gate5Open = true; spawnPortPeople(); }   // 門ができる前から町にいたセーブは、門を開けた状態にする
   if(state.map==='dungeon' && state.hp<=0) openDeath();            // closed the game at 0 hearts: the choice is still waiting
   state.bossBeaten = state.bossBeaten || {};
   for(const k of Object.keys(state.bossDone||{})) state.bossBeaten[k] = true;                // old saves: keep their checkpoints
