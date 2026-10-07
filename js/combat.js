@@ -141,8 +141,7 @@
     atkCool = SWORD_CD[lv-1];
     triggerActionAnim('sword');
     const dmg = SWORD_DMG[lv-1], reach = 1.05 + 0.08*(lv-1);
-    const fx = state.dir==='left'?-1:state.dir==='right'?1:0;
-    const fy = state.dir==='up'?-1:state.dir==='down'?1:0;
+    const [fx, fy] = dirVec(state.dir);
     const cx = state.px + fx*0.75, cy = state.py + fy*0.75;
     const kl = en.knock||0, fl = en.fire||0, wl = en.wave||0;
     for(const e of enemies.slice()){
