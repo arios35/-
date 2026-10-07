@@ -170,25 +170,3 @@
       if(portWalkable(p.x,ny)) p.y = ny; else if(p.vy){ p.vy = -p.vy; }
     }
   }
-
-  // ---- 建物をタップしたときのひとこと(中には入れない) ----
-  function portNearBuilding(){                                  // 近くの建物のうち、入口がいちばん近いもの
-    const tx = tileX(), ty = tileY(); let best = null, bd = 1e9;
-    for(const b of PORT_BUILDINGS){
-      if(tx<b.x-1 || tx>b.x+b.w || ty<b.y-1 || ty>b.y+b.h) continue;
-      const d = Math.hypot((b.x+b.door+0.5)-(state.px+0.5), (b.y+b.h-0.5)-(state.py+0.5));
-      if(d<bd){ bd = d; best = b; }
-    }
-    return best;
-  }
-  const PORT_HOUSE_LINES = ['ドアには鍵がかかっているみたい', '中から楽しそうな声が聞こえる…', '今日はお休みみたい', '窓から、いい匂いがする…', 'ノックしても返事がない…'];
-  function portTapMessage(){
-    const b = portNearBuilding();
-    if(!b) return pickOf(['にぎやかな港町だなあ…', '潮のにおいがする🌊', 'カモメの声が聞こえる']);
-    if(b.type==='shop') return `${b.emoji} ${b.name}は準備中みたい…`;
-    if(b.type==='warehouse') return '📦 倉庫の大きな扉は閉まっている';
-    if(b.type==='inn') return '🛏️ 宿屋は満室みたい…';
-    if(b.type==='hall') return '🏛️ 役場は今日は閉まっている';
-    if(b.type==='lighthouse') return '⚓ 灯台の扉は固く閉じている';
-    return pickOf(PORT_HOUSE_LINES);
-  }
