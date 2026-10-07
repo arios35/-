@@ -98,6 +98,17 @@
     return false;
   }
 
+  // ---- 向きは8方向(上下左右+ななめ)。順番は 右から時計まわり(画面は下が+y) ----
+  const DIR8 = ['right','downright','down','downleft','left','upleft','up','upright'];
+  function dirFromVec(vx, vy, cur){                           // 動く向き → 8方向。いまの向きから少しずれただけなら変えない(指のぶれで向きがちらつかない)
+    const ang = Math.atan2(vy, vx), ci = DIR8.indexOf(cur);
+    if(ci >= 0){ const d = ang - ci*Math.PI/4; if(Math.abs(Math.atan2(Math.sin(d), Math.cos(d))) < Math.PI/8 + 0.15) return cur; }
+    return DIR8[((Math.round(ang/(Math.PI/4)) % 8) + 8) % 8];
+  }
+  function dirVec(dir){                                        // 向き → 長さ1の方向ベクトル [x, y]
+    const i = DIR8.indexOf(dir), a = (i < 0 ? 2 : i)*Math.PI/4;
+    return [Math.round(Math.cos(a)*1000)/1000, Math.round(Math.sin(a)*1000)/1000];
+  }
   const SPEED = 4.2; // tiles per second
   function updatePosition(dt, vx, vy){
     if(vx===0 && vy===0) return;
@@ -107,8 +118,7 @@
     if(!collides(nx, state.py)) state.px = nx;
     const ny = state.py + vy*SPEED*dt;
     if(!collides(state.px, ny)) state.py = ny;
-    if(Math.abs(vx) > Math.abs(vy)) state.dir = vx>0 ? 'right' : 'left';
-    else state.dir = vy>0 ? 'down' : 'up';
+    state.dir = dirFromVec(vx, vy, state.dir);
   }
 
   const WORK_CHARS = new Set(['h','i']);
