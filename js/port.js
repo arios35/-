@@ -110,7 +110,8 @@
     for(const x of [3,8,11,17,21,31,34,37,43,47,51]){                          // 岸壁の木箱・樽
       if(!inVert(x) && canPlace(x,28,1,1,'=')) addDecor(rnd()<0.5 ? 'crate' : 'barrel',x,28,1,1,true);
     }
-    addDecor('fountain',27,17,2,2,true);                                       // 広場の噴水
+    addDecor('fountain',27,17,2,2,true);                                       // 広場の噴水(井戸と同じく使える。足もとの4マスは 'k' = 井戸のマス)
+    pfr(27,17,28,18,'k');
     for(const [x,y] of [[22,10],[33,10],[22,24],[33,24]]) if(okTile(x,y,'=')) addDecor('tree',x,y,1,1,true);
     for(const [x,y] of [[24,13],[30,13],[24,21],[30,21]]) if(canPlace(x,y,2,1,'=')) addDecor('bench',x,y,2,1,true);
     for(const [x,y] of [[23,16],[32,16],[23,19],[32,19]]) if(okTile(x,y,'=')) addDecor('lamp',x,y,1,1,true);
