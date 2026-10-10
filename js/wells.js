@@ -1,5 +1,8 @@
   // ---- Wells: fast travel between wells (unlock once for 2000G) ----
-  const WELLS = { home:{x:14,y:11}, north:{x:15,y:12}, river:{x:6,y:20}, coast:{x:18,y:10}, cave:CAVE_WELL };
+  const WELLS = { home:{x:14,y:11}, north:{x:15,y:12}, river:{x:6,y:20}, coast:{x:18,y:10}, cave:CAVE_WELL,
+                  port:{x:27,y:18, ax:27.5, ay:17.46} };       // 港町の噴水(2x2)。ax,ay = 飛び込み・出てくるときの中心(噴水のまん中)
+  const wellKind = name => name==='port' ? '噴水' : '井戸';
+  const wellName = name => `${MAP_NAMES[name]}の${wellKind(name)}`;
   const WELL_COST = 2000;
   const IN_HOP = 0.4, IN_SINK = 0.55, IN_FADE = 0.3, OUT_RISE = 0.5, OUT_HOP = 0.4, OUT_FADE = 0.3;
   let wellAnim = null;        // the jump-in / climb-out cutscene
@@ -8,17 +11,19 @@
     const list = document.getElementById('wellList'); list.innerHTML = '';
     const desc = document.getElementById('wellDesc'), here = state.map;
     if(!state.wells[here]){
-      desc.textContent = `この井戸に${WELL_COST}Gを払うと解放されて、解放ずみの他の井戸と行き来できるようになります。`;
+      document.getElementById('wellTitle').textContent = here==='port' ? '⛲ 噴水' : '🪣 井戸';
+      desc.textContent = `この${wellKind(here)}に${WELL_COST}Gを払うと解放されて、解放ずみの他の井戸・噴水と行き来できるようになります。`;
       const row = document.createElement('div'); row.className = 'shop-item';
-      const span = document.createElement('span'); span.textContent = `この井戸を解放 ${WELL_COST}G`;
+      const span = document.createElement('span'); span.textContent = `この${wellKind(here)}を解放 ${WELL_COST}G`;
       const b = document.createElement('button'); b.textContent = '払う'; b.onclick = payWell;
       row.appendChild(span); row.appendChild(b); list.appendChild(row);
     } else {
-      desc.textContent = '行き先を選ぶと、井戸に飛び込みます。行き先の井戸は、先に行って解放しておく必要があります。';
+      document.getElementById('wellTitle').textContent = here==='port' ? '⛲ 噴水' : '🪣 井戸';
+      desc.textContent = `行き先を選ぶと、${wellKind(here)}に飛び込みます。行き先の井戸・噴水は、先に行って解放しておく必要があります。`;
       for(const name of Object.keys(WELLS)){
         if(name===here) continue;
         const row = document.createElement('div'); row.className = 'shop-item';
-        const span = document.createElement('span'); span.textContent = `${MAP_NAMES[name]}の井戸`;
+        const span = document.createElement('span'); span.textContent = wellName(name);
         row.appendChild(span);
         if(state.wells[name]){
           const b = document.createElement('button'); b.textContent = '行く'; b.onclick = ()=>startWellTravel(name);
@@ -40,13 +45,13 @@
     if(state.wells[state.map]) return;
     if(state.gold<WELL_COST){ renderWell(`お金が足りないよ(あと${WELL_COST-state.gold}G)`); return; }
     state.gold -= WELL_COST; state.wells[state.map] = true; updateHud(); save();
-    renderWell('この井戸を解放した!');
+    renderWell(`この${wellKind(state.map)}を解放した!`);
   }
   document.getElementById('closeWell').onclick = ()=>document.getElementById('wellModal').classList.remove('open');
   function startWellTravel(dest){
     if(!state.wells[state.map] || !state.wells[dest] || !curWell || wellAnim || !WELLS[dest]) return;
     document.getElementById('wellModal').classList.remove('open');
-    wellAnim = { phase:'in', t:0, dest, sx:state.px, sy:state.py, wx:curWell[0], wy:curWell[1], splashed:false };
+    wellAnim = { phase:'in', t:0, dest, sx:state.px, sy:state.py, wx:(WELLS[state.map].ax ?? curWell[0]), wy:(WELLS[state.map].ay ?? curWell[1]), splashed:false };
   }
   function warpToWell(name){
     state.map = name; setMapSize(name); curLayout = MAP_LAYOUTS[name];
@@ -61,7 +66,7 @@
     }
     state.px = land[0]; state.py = land[1]; state.dir = 'down';
     updateMapName();
-    setMsg(`${MAP_NAMES[name]}の井戸から出てきた`);
+    setMsg(`${wellName(name)}から出てきた`);
     save();
   }
   function updateWell(dt){
@@ -71,7 +76,7 @@
       if(a.t >= IN_HOP + IN_SINK + IN_FADE){                          // the screen is black: pop out of the other well
         warpToWell(a.dest);
         const w = WELLS[a.dest];
-        wellAnim = { phase:'out', t:0, wx:w.x, wy:w.y, lx:state.px, ly:state.py, splashed:false, landed:false };
+        wellAnim = { phase:'out', t:0, wx:(w.ax ?? w.x), wy:(w.ay ?? w.y), lx:state.px, ly:state.py, splashed:false, landed:false };
       }
     } else {
       if(!a.splashed && a.t >= 0.12){ a.splashed = true; addEffect(a.wx, a.wy, 'water'); }
