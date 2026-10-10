@@ -9,8 +9,9 @@
     if(now - lastTouchEnd <= 350 && !onUi) e.preventDefault();
     lastTouchEnd = now;
   }, { passive:false });
-  document.addEventListener('selectstart', (e)=>e.preventDefault());     // no text selection / copy popup on long-press
-  document.addEventListener('contextmenu', (e)=>e.preventDefault());   // iOS pinch zoom only (no tap swallowing)
+  const inTextBox = e => !!(e.target && (e.target.tagName==='TEXTAREA' || (e.target.closest && e.target.closest('textarea'))));   // バックアップの入力枠だけは、選択・貼り付けできるように
+  document.addEventListener('selectstart', (e)=>{ if(!inTextBox(e)) e.preventDefault(); });     // no text selection / copy popup on long-press
+  document.addEventListener('contextmenu', (e)=>{ if(!inTextBox(e)) e.preventDefault(); });   // iOS pinch zoom only (no tap swallowing)
 
   const TILE = 30;
   let VIEW_COLS = 14, VIEW_ROWS = 10;
