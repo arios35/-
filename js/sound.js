@@ -1,6 +1,6 @@
 /* sound.js - WebAudioで作る効果音とBGM（音声ファイル不要）*/
 (function(){
-  let ac=null, master=null, muted=false, bgmTimer=null, scene='', step=0;
+  let ac=null, master=null, muted=false;
   try{ muted = localStorage.getItem('nonbiri-mute')==='1'; }catch(e){}
 
   function ensure(){
@@ -67,51 +67,38 @@
   }
   window.sfx=sfx;
 
-  // ---- BGM ----
-  const SCALES={
-    village:{root:294,notes:[0,2,4,5,7,9,11,12,14],tempo:0.3,type:'triangle',bass:[0,5,7,5],vol:0.45},
-    north:  {root:330,notes:[0,2,4,7,9,12,14],tempo:0.32,type:'triangle',bass:[0,7,5,7],vol:0.45},
-    river:  {root:294,notes:[0,2,4,7,9,12],tempo:0.38,type:'sine',bass:[0,4,5,4]},
-    coast:  {root:330,notes:[0,2,4,7,9,12],tempo:0.4,type:'triangle',bass:[0,5,7,5]},
-    port:   {root:262,notes:[0,2,4,5,7,9],tempo:0.34,type:'square',bass:[0,7,5,7],vol:0.5},
-    cave:   {root:196,notes:[0,3,5,6,7,10],tempo:0.6,type:'sine',bass:[0,0,3,-2]},
-    dungeon:{root:175,notes:[0,1,5,7,8,12],tempo:0.45,type:'triangle',bass:[0,0,-2,1]},
-    boss:   {root:147,notes:[0,1,3,6,7,8],tempo:0.22,type:'sawtooth',bass:[0,0,1,0],vol:0.4}
-  };
-  function sceneNow(){
-    try{
-      const m=state.map;
-      if(m==='dungeon'){
-        const f=state.floor||(typeof floorNo!=='undefined'?floorNo:0);
-        if(f && f%3===0) return 'boss';
-        return 'dungeon';
-      }
-      return SCALES[m]?m:'village';
-    }catch(e){ return 'village'; }
-  }
+  // ---- BGM（港町だけ）----
+  // 8分音符×8=1小節、全8小節のメロディ。数字はドからの半音、nullは休み
+  const R=null;
+  const MELODY=[
+    0,R,4,R,7,R,4,R,   5,R,9,R,7,R,4,R,
+    2,R,5,R,4,R,0,R,   2,4,2,R,0,R,R,R,
+    4,R,7,R,12,R,9,R,  7,R,5,R,4,5,7,R,
+    9,R,7,R,5,R,2,R,   4,2,0,R,0,R,R,R
+  ];
+  const BASS=[0,5,7,0, 9,5,7,0]; // 小節ごとの低音の根音
+  const EIGHTH=0.2;
+  let nextT=0, bgmTimer=null, pos=0;
   const hz=(root,s)=>root*Math.pow(2,s/12);
-  function bgmTick(){
-    if(muted||!ac||ac.state!=='running') return;
-    const sc=SCALES[scene]; if(!sc) return;
-    const t=ac.currentTime+0.05, v=(sc.vol||0.35)*0.35;
-    const beat=step%8, bar=Math.floor(step/8)%4;
-    if(beat%2===0){
-      const n=sc.notes[(Math.random()*sc.notes.length)|0];
-      if(Math.random()<0.75) tone(hz(sc.root*2,n),t,sc.tempo*1.6,sc.type,v);
+  function inTown(){ try{ return state.map==='port'; }catch(e){ return false; } }
+  function bgmSchedule(){
+    if(!ac||ac.state!=='running') return;
+    if(muted||!inTown()){ nextT=0; pos=0; return; }
+    const now=ac.currentTime;
+    if(nextT<now) nextT=now+0.05;
+    while(nextT<now+0.4){
+      const bar=Math.floor(pos/8)%8, beat=pos%8, m=MELODY[pos%64];
+      if(m!==null) tone(hz(523.25,m),nextT,EIGHTH*1.7,'square',0.07);
+      if(m!==null && beat%4===0) tone(hz(523.25,m)*2,nextT,EIGHTH*0.8,'triangle',0.03);
+      if(beat===0) tone(hz(130.8,BASS[bar]),nextT,EIGHTH*3.5,'triangle',0.2);
+      if(beat===4) tone(hz(130.8,BASS[bar]+7),nextT,EIGHTH*3.5,'triangle',0.16);
+      if(beat===2||beat===6) noise(nextT,0.03,0.05,6000);
+      nextT+=EIGHTH; pos++;
     }
-    if(beat===0||beat===4) tone(hz(sc.root/2,sc.bass[bar]),t,sc.tempo*3,'sine',v*1.6);
-    step++;
   }
   function startBgm(){
-    const s=sceneNow();
-    if(bgmTimer && s===scene) return;
-    scene=s; step=0;
-    if(bgmTimer) clearInterval(bgmTimer);
-    bgmTimer=setInterval(()=>{
-      const n=sceneNow();
-      if(n!==scene){ scene=n; step=0; clearInterval(bgmTimer); bgmTimer=null; startBgm(); return; }
-      bgmTick();
-    }, (SCALES[scene]||SCALES.village).tempo*1000);
+    if(bgmTimer) return;
+    bgmTimer=setInterval(bgmSchedule,100);
   }
 
   // ---- ミュートボタン ----
