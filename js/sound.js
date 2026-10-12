@@ -69,8 +69,8 @@
 
   // ---- BGM ----
   const SCALES={
-    village:{root:262,notes:[0,2,4,7,9,12],tempo:0.42,type:'triangle',bass:[0,0,7,5]},
-    north:  {root:247,notes:[0,3,5,7,10,12],tempo:0.5,type:'sine',bass:[0,3,5,3]},
+    village:{root:294,notes:[0,2,4,5,7,9,11,12,14],tempo:0.3,type:'triangle',bass:[0,5,7,5],vol:0.45},
+    north:  {root:330,notes:[0,2,4,7,9,12,14],tempo:0.32,type:'triangle',bass:[0,7,5,7],vol:0.45},
     river:  {root:294,notes:[0,2,4,7,9,12],tempo:0.38,type:'sine',bass:[0,4,5,4]},
     coast:  {root:330,notes:[0,2,4,7,9,12],tempo:0.4,type:'triangle',bass:[0,5,7,5]},
     port:   {root:262,notes:[0,2,4,5,7,9],tempo:0.34,type:'square',bass:[0,7,5,7],vol:0.5},
